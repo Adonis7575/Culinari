@@ -451,6 +451,47 @@ const CSS = `
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--ash); border-radius: 3px; }
 
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 300;
+    background: rgba(44,24,16,0.55); backdrop-filter: blur(6px);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 2rem 1rem 4rem; overflow-y: auto;
+  }
+  .modal-inner {
+    width: 100%; max-width: 900px; position: relative; padding-top: 0.25rem;
+  }
+  .modal-close {
+    position: fixed; top: 1.25rem; right: 1.25rem; z-index: 301;
+    background: var(--surface); border: 1.5px solid var(--border);
+    border-radius: 50%; width: 40px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 1.1rem; color: var(--bark);
+    box-shadow: var(--shadow); transition: all 0.2s;
+  }
+  .modal-close:hover { background: var(--warm-white); transform: scale(1.08); }
+  .modal-loading-card {
+    background: var(--surface); border-radius: 20px;
+    border: 1px solid var(--border); box-shadow: var(--shadow-lg);
+    animation: fadeUp 0.3s ease;
+  }
+  .modal-error-card {
+    background: var(--surface); border-radius: 20px;
+    border: 1px solid var(--border); box-shadow: var(--shadow-lg);
+    padding: 3rem 2rem; text-align: center;
+    animation: fadeUp 0.3s ease;
+  }
+  .recipe-card-hint {
+    font-size: 0.75rem; color: var(--terra); margin-top: 0.5rem;
+    font-family: 'Space Mono', monospace; letter-spacing: 0.04em;
+    opacity: 0; transition: opacity 0.2s;
+  }
+  .recipe-card:hover .recipe-card-hint { opacity: 1; }
+  .improve-overlay {
+    position: absolute; inset: 0; border-radius: 20px; z-index: 10;
+    background: rgba(250,247,242,0.88); backdrop-filter: blur(3px);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;
+  }
+
   .planner-picker-panel {
     position: absolute; top: calc(100% + 0.5rem); right: 0; z-index: 200;
     background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
@@ -600,6 +641,15 @@ Recipe: ${JSON.stringify(recipe)}
 Instruction: "${instruction}"`;
 }
 
+function buildDiscoverPrompt(card: { name:string; cuisine:string; time:string; calories:number; diff:string }) {
+  return `You are a world-class chef AI. Generate the complete, authentic recipe for "${card.name}" — a ${card.cuisine} dish.
+
+Target: ~${card.calories} cal, ${card.time} cook time, ${card.diff} difficulty.
+
+Respond ONLY with valid JSON, no markdown:
+{"name":"${card.name}","cuisine":"${card.cuisine}","description":"...","time":"${card.time}","difficulty":"${card.diff}","servings":2,"ingredients":[{"amount":"...","name":"..."}],"steps":["..."],"nutrition":{"calories":${card.calories},"protein":0,"carbs":0,"fat":0},"tips":"..."}`;
+}
+
 // ─── Toast ───────────────────────────────────────────────────────────────────
 function Toast({ toasts }: { toasts: Array<{id:number;msg:string;icon:string}> }) {
   return (
@@ -615,7 +665,7 @@ function Toast({ toasts }: { toasts: Array<{id:number;msg:string;icon:string}> }
 function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner }: {
   recipe: Recipe; saved: boolean;
   onSave: () => void; onImprove: (i: string) => void;
-  onAddToPlanner: (day: string, meal: "b"|"l"|"d") => void;
+  onAddToPlanner?: (day: string, meal: "b"|"l"|"d") => void;
 }) {
   const [showPicker, setShowPicker] = useState(false);
   const [pickerDay, setPickerDay] = useState("Mon");
@@ -715,7 +765,7 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner }: {
                     ))}
                   </div>
                 </div>
-                <button className="btn-picker-confirm" onClick={()=>{onAddToPlanner(pickerDay,pickerMeal);setShowPicker(false);}}>
+                <button className="btn-picker-confirm" onClick={()=>{onAddToPlanner?.(pickerDay,pickerMeal);setShowPicker(false);}}>
                   Add to Plan
                 </button>
               </div>
@@ -841,17 +891,53 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner }:
 }
 
 // ─── DiscoverPage ─────────────────────────────────────────────────────────────
-function DiscoverPage({ onSave, savedIds }: { onSave:(r:Recipe)=>void; savedIds:Set<string> }) {
+type SampleRecipe = typeof SAMPLE_RECIPES[0];
+
+function DiscoverPage({ onSave, savedIds, onAddToPlanner }: {
+  onSave:(r:Recipe)=>void; savedIds:Set<string>;
+  onAddToPlanner: (recipe: Recipe, day: string, meal: "b"|"l"|"d") => void;
+}) {
   const [filter, setFilter] = useState("All");
+  const [activeCard, setActiveCard] = useState<SampleRecipe|null>(null);
+  const [generatedRecipe, setGeneratedRecipe] = useState<Recipe|null>(null);
+  const [loading, setLoading] = useState(false);
+  const [improving, setImproving] = useState(false);
+  const [error, setError] = useState<string|null>(null);
+
   const filters = ["All","Italian","Japanese","Mexican","Indian","Mediterranean","Thai","Korean","French"];
   const shown = filter==="All" ? SAMPLE_RECIPES : SAMPLE_RECIPES.filter(r=>r.cuisine===filter);
+
+  const openCard = async (card: SampleRecipe) => {
+    setActiveCard(card);
+    setGeneratedRecipe(null);
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await callClaude(buildDiscoverPrompt(card));
+      setGeneratedRecipe(result);
+    } catch { setError("Failed to generate recipe — please try again."); }
+    finally { setLoading(false); }
+  };
+
+  const closeModal = () => { setActiveCard(null); setGeneratedRecipe(null); setError(null); };
+
+  const improve = async (instruction: string) => {
+    if (!generatedRecipe || improving) return;
+    setImproving(true);
+    try {
+      const result = await callClaude(buildImprovePrompt(generatedRecipe, instruction));
+      setGeneratedRecipe(result);
+    } catch { setError("Improvement failed — please try again."); }
+    finally { setImproving(false); }
+  };
+
   return (
     <div className="page">
       <div className="discover-page">
         <div style={{marginBottom:"2rem"}}>
           <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>Recipe Collection</div>
           <div className="discover-title">Discover <em style={{fontFamily:"Cormorant Garamond,serif",fontStyle:"italic",color:"var(--terra)"}}>exceptional</em> dishes</div>
-          <p style={{color:"var(--smoke)",fontSize:"0.9rem"}}>Browse curated recipes from global cuisines.</p>
+          <p style={{color:"var(--smoke)",fontSize:"0.9rem"}}>Click any card to get the full AI-generated recipe with ingredients, steps, and nutrition.</p>
         </div>
         <div className="filter-bar">
           <span className="filter-label">Cuisine:</span>
@@ -859,7 +945,7 @@ function DiscoverPage({ onSave, savedIds }: { onSave:(r:Recipe)=>void; savedIds:
         </div>
         <div className="recipe-grid">
           {shown.map(r=>(
-            <div key={r.id} className="recipe-card">
+            <div key={r.id} className="recipe-card" onClick={()=>openCard(r)}>
               <div className="recipe-card-img">
                 <span style={{position:"relative",zIndex:1}}>{r.emoji}</span>
                 <div className="recipe-card-img-overlay"/>
@@ -872,11 +958,57 @@ function DiscoverPage({ onSave, savedIds }: { onSave:(r:Recipe)=>void; savedIds:
                   <span>🔥 {r.calories} cal</span>
                   <span className="recipe-card-rating">★ {r.rating}</span>
                 </div>
+                <div className="recipe-card-hint">✦ View full recipe →</div>
               </div>
             </div>
           ))}
         </div>
       </div>
+
+      {activeCard && (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal-inner" onClick={e=>e.stopPropagation()}>
+            <button className="modal-close" onClick={closeModal}>✕</button>
+
+            {loading && (
+              <div className="modal-loading-card">
+                <div className="loading-state">
+                  <div className="loading-spinner"/>
+                  <div>
+                    <div className="loading-label">Crafting {activeCard.name}…</div>
+                    <div className="loading-sublabel">Generating full recipe with ingredients, steps, and nutrition.</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {error && !loading && (
+              <div className="modal-error-card">
+                <p style={{color:"var(--terra)",marginBottom:"1rem"}}>{error}</p>
+                <button className="btn-add" onClick={()=>openCard(activeCard)}>Try Again</button>
+              </div>
+            )}
+
+            {generatedRecipe && !loading && (
+              <div style={{position:"relative"}}>
+                {improving && (
+                  <div className="improve-overlay">
+                    <div className="loading-spinner"/>
+                    <div className="loading-label" style={{fontSize:"1rem"}}>Improving recipe…</div>
+                  </div>
+                )}
+                <RecipeOutput
+                  recipe={generatedRecipe}
+                  saved={savedIds.has(generatedRecipe.name)}
+                  onSave={()=>onSave(generatedRecipe)}
+                  onImprove={improve}
+                  onAddToPlanner={(day,meal)=>onAddToPlanner(generatedRecipe,day,meal)}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1106,7 +1238,7 @@ export default function RecipePlatform() {
           </div>
         </nav>
         {tab==="generate" && <GeneratorPage onSave={handleSave} savedIds={savedIds} initialIngredients={pendingIngredients} onAddToPlanner={handleAddToPlanner}/>}
-        {tab==="discover" && <DiscoverPage onSave={handleSave} savedIds={savedIds}/>}
+        {tab==="discover" && <DiscoverPage onSave={handleSave} savedIds={savedIds} onAddToPlanner={handleAddToPlanner}/>}
         {tab==="pantry" && <PantryPage items={pantryItems} setItems={setPantryItems} onGenerateFromPantry={()=>{setPendingIngredients(pantryItems.map(i=>i.name));setTab("generate");}}/>}
         {tab==="planner" && <PlannerPage mealPlan={mealPlan}/>}
         {tab==="saved" && <SavedPage saved={saved} onRemove={handleSave}/>}
