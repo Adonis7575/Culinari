@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Culina — AI Recipe Platform",
+  title: "Culinaria — AI Recipe Platform",
   description: "Generate, discover, and customize recipes with AI",
 };
 

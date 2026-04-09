@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
 // ─── Design System ─────────────────────────────────────────────────────────
 const FONTS = `
@@ -450,6 +450,59 @@ const CSS = `
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--ash); border-radius: 3px; }
+
+  .planner-picker-panel {
+    position: absolute; top: calc(100% + 0.5rem); right: 0; z-index: 200;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 1rem; box-shadow: var(--shadow-lg); min-width: 220px;
+    display: flex; flex-direction: column; gap: 0.75rem;
+  }
+  .planner-picker-label {
+    font-family: 'Space Mono', monospace; font-size: 0.65rem;
+    text-transform: uppercase; letter-spacing: 0.1em; color: var(--smoke); margin-bottom: 0.35rem;
+  }
+  .picker-day-grid { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .picker-meal-row { display: flex; gap: 0.3rem; }
+  .picker-chip {
+    padding: 0.25rem 0.55rem; border-radius: 100px; border: 1.5px solid var(--border);
+    background: var(--cream); color: var(--bark); font-size: 0.75rem; font-weight: 500;
+    cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s;
+  }
+  .picker-chip.active { background: var(--bark); color: var(--cream); border-color: var(--bark); }
+  .picker-chip:hover:not(.active) { border-color: var(--smoke); }
+  .btn-picker-confirm {
+    padding: 0.5rem; border-radius: 8px; background: var(--terra); color: white;
+    border: none; cursor: pointer; font-family: 'DM Sans', sans-serif;
+    font-size: 0.85rem; font-weight: 500; transition: background 0.2s;
+  }
+  .btn-picker-confirm:hover { background: #b5541f; }
+
+  .pantry-item-edit { flex: 1; display: flex; flex-direction: column; gap: 0.4rem; padding: 0.25rem 0; }
+  .pantry-item-controls { display: flex; align-items: center; gap: 0.4rem; }
+  .pantry-item-actions { display: flex; align-items: center; gap: 0.4rem; }
+  .pantry-icon-btn {
+    background: none; border: none; cursor: pointer; padding: 0.15rem 0.35rem;
+    font-size: 0.9rem; border-radius: 6px; transition: all 0.15s; line-height: 1;
+  }
+  .pantry-icon-btn.edit { color: var(--smoke); }
+  .pantry-icon-btn.edit:hover { background: var(--warm-white); color: var(--bark); }
+  .pantry-icon-btn.delete { color: var(--ash); }
+  .pantry-icon-btn.delete:hover { background: #FFF0EE; color: var(--terra); }
+  .pantry-status-toggle {
+    padding: 0.2rem 0.55rem; border-radius: 100px; border: 1.5px solid var(--border);
+    font-size: 0.72rem; font-weight: 500; cursor: pointer;
+    font-family: 'DM Sans', sans-serif; transition: all 0.15s; white-space: nowrap;
+  }
+  .pantry-status-toggle.ok { background: #EEF5EE; color: var(--sage); border-color: var(--sage); }
+  .pantry-status-toggle.low { background: #FFF0EE; color: var(--terra); border-color: var(--terra); }
+  .pantry-edit-save {
+    padding: 0.25rem 0.6rem; border-radius: 6px; background: var(--sage); color: white;
+    border: none; cursor: pointer; font-size: 0.78rem; font-weight: 500;
+  }
+  .pantry-edit-cancel {
+    padding: 0.25rem 0.6rem; border-radius: 6px; background: var(--warm-white); color: var(--smoke);
+    border: 1px solid var(--border); cursor: pointer; font-size: 0.78rem;
+  }
 `;
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -497,6 +550,7 @@ const MEAL_PLAN: Record<string, {b:string;l:string;d:string;cal:number}> = {
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+interface PantryItem { name: string; qty: string; status: string; }
 interface Ingredient { amount: string; name: string; }
 interface Nutrition { calories: number; protein: number; carbs: number; fat: number; }
 interface Recipe {
@@ -558,10 +612,15 @@ function Toast({ toasts }: { toasts: Array<{id:number;msg:string;icon:string}> }
 }
 
 // ─── RecipeOutput ─────────────────────────────────────────────────────────────
-function RecipeOutput({ recipe, saved, onSave, onImprove }: {
+function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner }: {
   recipe: Recipe; saved: boolean;
   onSave: () => void; onImprove: (i: string) => void;
+  onAddToPlanner: (day: string, meal: "b"|"l"|"d") => void;
 }) {
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerDay, setPickerDay] = useState("Mon");
+  const [pickerMeal, setPickerMeal] = useState<"b"|"l"|"d">("d");
+  const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   return (
     <div className="recipe-output">
       <div className="recipe-header">
@@ -632,8 +691,36 @@ function RecipeOutput({ recipe, saved, onSave, onImprove }: {
             const txt = `${recipe.name}\n\nIngredients:\n${recipe.ingredients?.map(i=>`${i.amount} ${i.name}`).join('\n')}\n\nSteps:\n${recipe.steps?.map((s,i)=>`${i+1}. ${s}`).join('\n')}`;
             navigator.clipboard.writeText(txt);
           }}>↗ Copy</button>
-          <button className="btn-action">🛒 Grocery List</button>
-          <button className="btn-action">📅 Add to Planner</button>
+          <button className="btn-action" onClick={() => {
+            const list = `${recipe.name} — Grocery List\n\n${recipe.ingredients?.map(i=>`• ${i.amount} ${i.name}`).join('\n')}`;
+            navigator.clipboard.writeText(list);
+          }}>🛒 Grocery List</button>
+          <div style={{position:"relative"}}>
+            <button className="btn-action" onClick={() => setShowPicker(p=>!p)}>📅 Add to Planner</button>
+            {showPicker && (
+              <div className="planner-picker-panel">
+                <div>
+                  <div className="planner-picker-label">Day</div>
+                  <div className="picker-day-grid">
+                    {DAYS.map(d=>(
+                      <button key={d} className={`picker-chip${pickerDay===d?" active":""}`} onClick={()=>setPickerDay(d)}>{d}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="planner-picker-label">Meal</div>
+                  <div className="picker-meal-row">
+                    {([["b","Breakfast"],["l","Lunch"],["d","Dinner"]] as const).map(([k,label])=>(
+                      <button key={k} className={`picker-chip${pickerMeal===k?" active":""}`} onClick={()=>setPickerMeal(k)}>{label}</button>
+                    ))}
+                  </div>
+                </div>
+                <button className="btn-picker-confirm" onClick={()=>{onAddToPlanner(pickerDay,pickerMeal);setShowPicker(false);}}>
+                  Add to Plan
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -641,8 +728,16 @@ function RecipeOutput({ recipe, saved, onSave, onImprove }: {
 }
 
 // ─── GeneratorPage ────────────────────────────────────────────────────────────
-function GeneratorPage({ onSave, savedIds }: { onSave: (r:Recipe)=>void; savedIds: Set<string> }) {
-  const [ingredients, setIngredients] = useState<string[]>([]);
+function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner }: {
+  onSave: (r:Recipe)=>void; savedIds: Set<string>;
+  initialIngredients?: string[];
+  onAddToPlanner: (recipe: Recipe, day: string, meal: "b"|"l"|"d") => void;
+}) {
+  const [ingredients, setIngredients] = useState<string[]>(initialIngredients || []);
+
+  useEffect(() => {
+    if (initialIngredients && initialIngredients.length > 0) setIngredients(initialIngredients);
+  }, [initialIngredients]);
   const [input, setInput] = useState("");
   const [cuisine, setCuisine] = useState("Any Cuisine");
   const [diet, setDiet] = useState("No Restrictions");
@@ -739,7 +834,7 @@ function GeneratorPage({ onSave, savedIds }: { onSave: (r:Recipe)=>void; savedId
         </div>
       )}
       {recipe && !loading && (
-        <RecipeOutput recipe={recipe} saved={savedIds.has(recipe.name)} onSave={()=>onSave(recipe)} onImprove={improve} />
+        <RecipeOutput recipe={recipe} saved={savedIds.has(recipe.name)} onSave={()=>onSave(recipe)} onImprove={improve} onAddToPlanner={(day,meal)=>onAddToPlanner(recipe,day,meal)}/>
       )}
     </div>
   );
@@ -787,12 +882,29 @@ function DiscoverPage({ onSave, savedIds }: { onSave:(r:Recipe)=>void; savedIds:
 }
 
 // ─── PantryPage ───────────────────────────────────────────────────────────────
-function PantryPage({ onGenerateFromPantry }: { onGenerateFromPantry:()=>void }) {
-  const [items, setItems] = useState(PANTRY_ITEMS);
+function PantryPage({ items, setItems, onGenerateFromPantry }: {
+  items: PantryItem[];
+  setItems: React.Dispatch<React.SetStateAction<PantryItem[]>>;
+  onGenerateFromPantry: () => void;
+}) {
   const [newItem, setNewItem] = useState("");
+  const [editingIdx, setEditingIdx] = useState<number|null>(null);
+  const [editName, setEditName] = useState("");
+  const [editQty, setEditQty] = useState("");
+  const [editStatus, setEditStatus] = useState("ok");
+
   const add = () => {
     if (newItem.trim()) { setItems(p=>[...p,{name:newItem.trim(),qty:"1 unit",status:"ok"}]); setNewItem(""); }
   };
+  const startEdit = (i: number) => {
+    setEditingIdx(i); setEditName(items[i].name); setEditQty(items[i].qty); setEditStatus(items[i].status);
+  };
+  const saveEdit = () => {
+    if (editingIdx===null) return;
+    setItems(p=>p.map((item,i)=>i===editingIdx?{name:editName,qty:editQty,status:editStatus}:item));
+    setEditingIdx(null);
+  };
+
   return (
     <div className="page">
       <div className="pantry-page">
@@ -809,11 +921,31 @@ function PantryPage({ onGenerateFromPantry }: { onGenerateFromPantry:()=>void })
             <div className="pantry-card-title">◎ Current Stock</div>
             {items.map((item,i)=>(
               <div key={i} className="pantry-item">
-                <div className="pantry-item-name">
-                  <span className={`pantry-item-dot${item.status==="low"?" low":""}`}/>
-                  {item.name}
-                </div>
-                <span style={{fontSize:"0.78rem",color:"var(--smoke)",fontFamily:"Space Mono,monospace"}}>{item.qty}</span>
+                {editingIdx===i ? (
+                  <div className="pantry-item-edit">
+                    <input className="ingredient-input" style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem"}} value={editName} onChange={e=>setEditName(e.target.value)}/>
+                    <div className="pantry-item-controls">
+                      <input className="ingredient-input" style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem",width:"90px"}} value={editQty} onChange={e=>setEditQty(e.target.value)} placeholder="qty"/>
+                      <button className={`pantry-status-toggle ${editStatus}`} onClick={()=>setEditStatus(s=>s==="ok"?"low":"ok")}>
+                        {editStatus==="ok"?"In Stock":"Low"}
+                      </button>
+                      <button className="pantry-edit-save" onClick={saveEdit}>✓ Save</button>
+                      <button className="pantry-edit-cancel" onClick={()=>setEditingIdx(null)}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="pantry-item-name">
+                      <span className={`pantry-item-dot${item.status==="low"?" low":""}`}/>
+                      {item.name}
+                    </div>
+                    <div className="pantry-item-actions">
+                      <span style={{fontSize:"0.78rem",color:"var(--smoke)",fontFamily:"Space Mono,monospace"}}>{item.qty}</span>
+                      <button className="pantry-icon-btn edit" title="Edit" onClick={()=>startEdit(i)}>✎</button>
+                      <button className="pantry-icon-btn delete" title="Remove" onClick={()=>setItems(p=>p.filter((_,j)=>j!==i))}>×</button>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
             <button className="pantry-suggest-btn" onClick={onGenerateFromPantry}>✦ Generate Recipe from Pantry</button>
@@ -845,8 +977,8 @@ function PantryPage({ onGenerateFromPantry }: { onGenerateFromPantry:()=>void })
 }
 
 // ─── PlannerPage ──────────────────────────────────────────────────────────────
-function PlannerPage() {
-  const days = Object.keys(MEAL_PLAN);
+function PlannerPage({ mealPlan }: { mealPlan: typeof MEAL_PLAN }) {
+  const days = Object.keys(mealPlan);
   return (
     <div className="page">
       <div className="planner-page">
@@ -870,10 +1002,10 @@ function PlannerPage() {
               {(["b","l","d"] as const).map((key,i)=>(
                 <div key={key} className="planner-meal">
                   <div className="planner-meal-type">{["Breakfast","Lunch","Dinner"][i]}</div>
-                  <div className="planner-meal-name">{MEAL_PLAN[day][key]}</div>
+                  <div className="planner-meal-name">{mealPlan[day][key]}</div>
                 </div>
               ))}
-              <div className="planner-cal">{MEAL_PLAN[day].cal} kcal</div>
+              <div className="planner-cal">{mealPlan[day].cal} kcal</div>
             </div>
           ))}
         </div>
@@ -930,6 +1062,9 @@ export default function RecipePlatform() {
   const [tab, setTab] = useState("generate");
   const [saved, setSaved] = useState<Recipe[]>([]);
   const [toasts, setToasts] = useState<Array<{id:number;msg:string;icon:string}>>([]);
+  const [pantryItems, setPantryItems] = useState<PantryItem[]>(PANTRY_ITEMS);
+  const [pendingIngredients, setPendingIngredients] = useState<string[]>([]);
+  const [mealPlan, setMealPlan] = useState(MEAL_PLAN);
   const toastRef = useRef(0);
 
   const addToast = (msg: string, icon = "✓") => {
@@ -948,6 +1083,12 @@ export default function RecipePlatform() {
     }
   };
 
+  const handleAddToPlanner = (recipe: Recipe, day: string, meal: "b"|"l"|"d") => {
+    setMealPlan(p=>({...p, [day]:{...p[day],[meal]:recipe.name}}));
+    const label = meal==="b"?"Breakfast":meal==="l"?"Lunch":"Dinner";
+    addToast(`Added to ${day} ${label}`, "📅");
+  };
+
   const savedIds = new Set(saved.map(r=>r.name));
 
   return (
@@ -955,7 +1096,7 @@ export default function RecipePlatform() {
       <style>{FONTS}{CSS}</style>
       <div className="app">
         <nav className="nav">
-          <div className="nav-logo"><span style={{fontSize:"1.2rem"}}>◈</span> Culi<span>na</span></div>
+          <div className="nav-logo"><span style={{fontSize:"1.2rem"}}>◈</span> Culinari<span>a</span></div>
           <div className="nav-tabs">
             {[{id:"generate",label:"Generate"},{id:"discover",label:"Discover"},{id:"pantry",label:"Pantry"},{id:"planner",label:"Planner"},{id:"saved",label:"Saved",badge:saved.length||null}].map(t=>(
               <button key={t.id} className={`nav-tab${tab===t.id?" active":""}`} onClick={()=>setTab(t.id)}>
@@ -964,10 +1105,10 @@ export default function RecipePlatform() {
             ))}
           </div>
         </nav>
-        {tab==="generate" && <GeneratorPage onSave={handleSave} savedIds={savedIds}/>}
+        {tab==="generate" && <GeneratorPage onSave={handleSave} savedIds={savedIds} initialIngredients={pendingIngredients} onAddToPlanner={handleAddToPlanner}/>}
         {tab==="discover" && <DiscoverPage onSave={handleSave} savedIds={savedIds}/>}
-        {tab==="pantry" && <PantryPage onGenerateFromPantry={()=>setTab("generate")}/>}
-        {tab==="planner" && <PlannerPage/>}
+        {tab==="pantry" && <PantryPage items={pantryItems} setItems={setPantryItems} onGenerateFromPantry={()=>{setPendingIngredients(pantryItems.map(i=>i.name));setTab("generate");}}/>}
+        {tab==="planner" && <PlannerPage mealPlan={mealPlan}/>}
         {tab==="saved" && <SavedPage saved={saved} onRemove={handleSave}/>}
         <Toast toasts={toasts}/>
       </div>
