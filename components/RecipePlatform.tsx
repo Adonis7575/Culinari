@@ -1,5 +1,6 @@
 "use client";
 
+// Culinaria — overhauled: multi-select dietary needs, textures, expanded cuisines, cook mode, scaling, surprise.
 import { useState, useRef, useEffect } from "react";
 
 // ─── Design System ─────────────────────────────────────────────────────────
@@ -339,8 +340,10 @@ const CSS = `
     border: 1px solid var(--border); overflow: hidden;
     cursor: pointer; transition: all 0.25s;
     animation: fadeUp 0.3s ease;
+    appearance: none; width: 100%; text-align: left;
+    font-family: inherit; color: inherit;
   }
-  .recipe-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+  .recipe-card:hover, .recipe-card:focus-visible { transform: translateY(-4px); box-shadow: var(--shadow-lg); outline: none; }
   .recipe-card-img {
     width: 100%; height: 180px; object-fit: cover;
     background: linear-gradient(135deg, var(--warm-white), var(--ash));
@@ -544,32 +547,174 @@ const CSS = `
     padding: 0.25rem 0.6rem; border-radius: 6px; background: var(--warm-white); color: var(--smoke);
     border: 1px solid var(--border); cursor: pointer; font-size: 0.78rem;
   }
+
+  /* ── Responsive nav ── */
+  @media (max-width: 640px) {
+    .nav { padding: 0 1rem; }
+    .nav-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .nav-tabs::-webkit-scrollbar { display: none; }
+    .nav-tab { white-space: nowrap; }
+  }
+
+  /* ── Dietary needs panel ── */
+  .diet-panel-toggle {
+    width: 100%; display: flex; justify-content: space-between; align-items: center;
+    background: none; border: none; cursor: pointer; padding: 0;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .diet-panel-toggle:hover .diet-panel-arrow { color: var(--terra); }
+  .diet-panel-arrow { color: var(--smoke); font-size: 0.85rem; transition: color 0.2s; }
+  .diet-panel { margin-top: 1rem; display: flex; flex-direction: column; gap: 1.25rem; animation: fadeUp 0.25s ease; }
+  .diet-group-label {
+    font-family: 'Space Mono', monospace; font-size: 0.68rem;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--terra); margin-bottom: 0.6rem;
+  }
+  .diet-chip {
+    padding: 0.4rem 0.9rem; border-radius: 100px;
+    border: 1.5px solid var(--border);
+    background: var(--surface); color: var(--bark);
+    font-size: 0.8rem; font-weight: 500; cursor: pointer;
+    font-family: 'DM Sans', sans-serif; transition: all 0.2s;
+  }
+  .diet-chip:hover { border-color: var(--sage); }
+  .diet-chip.active { background: var(--sage); color: white; border-color: var(--sage); }
+  .diet-custom { width: 100%; resize: vertical; line-height: 1.5; font-family: 'DM Sans', sans-serif; }
+  .texture-note {
+    margin-top: 0.75rem; font-size: 0.78rem; color: var(--sage);
+    font-family: 'Space Mono', monospace; letter-spacing: 0.02em;
+  }
+
+  /* ── Generate row + surprise ── */
+  .generate-row { display: flex; gap: 0.75rem; }
+  .generate-row .btn-generate { flex: 1; }
+  .btn-surprise {
+    padding: 1rem 1.5rem; border-radius: 12px;
+    background: var(--surface); color: var(--bark);
+    border: 1.5px solid var(--border); cursor: pointer;
+    font-family: 'DM Sans', sans-serif; font-size: 0.95rem; font-weight: 600;
+    transition: all 0.25s; white-space: nowrap;
+  }
+  .btn-surprise:hover:not(:disabled) { border-color: var(--gold); background: #FDF8EC; transform: translateY(-2px) rotate(-1deg); }
+  .btn-surprise:disabled { opacity: 0.5; cursor: not-allowed; }
+  @media (max-width: 560px) { .generate-row { flex-direction: column; } }
+
+  /* ── Serving stepper ── */
+  .serving-stepper { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .serving-btn {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 1px solid rgba(250,247,242,0.35); background: rgba(250,247,242,0.1);
+    color: var(--cream); cursor: pointer; font-size: 0.9rem; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .serving-btn:hover { background: var(--terra); border-color: var(--terra); }
+  .serving-count { min-width: 42px; text-align: center; }
+  .serving-note {
+    font-family: 'Space Mono', monospace; font-size: 0.62rem;
+    color: var(--gold); margin-top: 0.2rem; display: block;
+  }
+
+  /* ── Cook mode ── */
+  .cook-mode-toggle {
+    padding: 0.3rem 0.85rem; border-radius: 100px;
+    border: 1.5px solid var(--border); background: var(--cream);
+    color: var(--bark); font-size: 0.75rem; font-weight: 600;
+    cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.2s;
+  }
+  .cook-mode-toggle:hover { border-color: var(--sage); }
+  .cook-mode-toggle.on { background: var(--sage); color: white; border-color: var(--sage); }
+  .cook-progress { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+  .cook-progress-bar {
+    flex: 1; height: 6px; border-radius: 100px;
+    background: var(--warm-white); overflow: hidden;
+  }
+  .cook-progress-fill {
+    height: 100%; border-radius: 100px;
+    background: linear-gradient(90deg, var(--sage), var(--gold));
+    transition: width 0.3s ease;
+  }
+  .cook-progress-label {
+    font-family: 'Space Mono', monospace; font-size: 0.68rem;
+    color: var(--smoke); white-space: nowrap;
+  }
+  .ingredient-item.checkable, .step-item.checkable { cursor: pointer; border-radius: 8px; transition: background 0.15s; }
+  .ingredient-item.checkable:hover, .step-item.checkable:hover { background: var(--warm-white); }
+  .ingredient-item.checked, .step-item.checked { opacity: 0.45; }
+  .ingredient-item.checked span:not(.check-box), .step-item.checked .step-text { text-decoration: line-through; }
+  .step-item.checked .step-num { background: var(--sage); }
+  .check-box {
+    width: 18px; height: 18px; min-width: 18px; border-radius: 5px;
+    border: 1.5px solid var(--ash); background: var(--surface);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; color: white; margin-top: 2px; transition: all 0.15s;
+  }
+  .check-box.on { background: var(--sage); border-color: var(--sage); }
+
+  /* ── Discover diet tags ── */
+  .recipe-card-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.5rem; }
+  .recipe-card-diet-tag {
+    font-family: 'Space Mono', monospace; font-size: 0.6rem;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 0.15rem 0.5rem; border-radius: 100px;
+    background: var(--warm-white); color: var(--sage);
+    border: 1px solid var(--border);
+  }
 `;
 
 // ─── Constants ──────────────────────────────────────────────────────────────
-const CUISINES = ["Any Cuisine","Italian","Mexican","Japanese","Indian","Mediterranean","Thai","French","Chinese","American","Greek","Korean","Middle Eastern"];
-const DIETS = ["No Restrictions","Vegetarian","Vegan","Keto","Paleo","Gluten-Free","Dairy-Free","Low-Carb","High-Protein"];
+const CUISINE_GROUPS: Record<string, string[]> = {
+  "Europe": ["Italian","French","Spanish","Greek","Portuguese","German","Polish","British"],
+  "Africa": ["Ethiopian","Nigerian","West African","Moroccan","Egyptian","South African"],
+  "Middle East": ["Lebanese","Turkish","Persian","Israeli","Middle Eastern"],
+  "South & Central Asia": ["Indian","Pakistani","Sri Lankan","Afghan"],
+  "East & Southeast Asia": ["Japanese","Chinese","Korean","Thai","Vietnamese","Filipino","Indonesian","Malaysian"],
+  "Americas": ["Mexican","Peruvian","Brazilian","Argentinian","Colombian","Caribbean","Jamaican","Cuban","American","Southern / Soul Food","Cajun & Creole","Hawaiian"],
+  "Broad": ["Mediterranean","Fusion"],
+};
+const CUISINES = ["Any Cuisine", ...Object.values(CUISINE_GROUPS).flat()];
+
+const DIET_GROUPS: Array<{ label: string; icon: string; options: string[] }> = [
+  { label: "Lifestyle", icon: "◎", options: ["Vegetarian","Vegan","Pescatarian","Flexitarian","Keto","Paleo","Low-Carb","High-Protein","Whole30","Mediterranean Diet"] },
+  { label: "Health Conditions", icon: "♥", options: ["Diabetic-Friendly","Heart-Healthy","Low-Sodium","Low-Cholesterol","Kidney-Friendly (Renal)","Low-FODMAP","GERD / Reflux-Friendly","Anti-Inflammatory","Low-Purine (Gout)","Low-Histamine","Low-Fiber / Low-Residue","High-Fiber","Low-Sugar","Iron-Rich (Anemia)","Pregnancy-Safe"] },
+  { label: "Allergies & Intolerances", icon: "⚠", options: ["Gluten-Free","Dairy-Free","Lactose-Free","Nut-Free","Peanut-Free","Shellfish-Free","Fish-Free","Egg-Free","Soy-Free","Sesame-Free","Corn-Free","Nightshade-Free"] },
+  { label: "Religious & Cultural", icon: "✦", options: ["Halal","Kosher","Hindu Vegetarian","Jain","Buddhist Vegetarian","No Pork","No Beef","No Alcohol","Lent / Fasting-Friendly"] },
+];
+
+const TEXTURES = ["Any Texture","Regular","Soft Foods (easy-chew)","Minced & Moist","Puréed","Smooth / Liquid"];
 const TIMES = ["Any Time","Under 15 min","Under 30 min","Under 1 hour","1-2 hours"];
 const SKILLS = ["Any Level","Beginner","Intermediate","Advanced"];
 const CALORIE_OPTIONS = ["Any Calories","Under 300 cal","300-500 cal","500-700 cal","700+ cal"];
-const IMPROVE_PROMPTS = ["Make it vegetarian","Reduce calories by 30%","Make it high protein","Turn into meal prep","Make it keto","Add more vegetables","Make it spicier","Reduce cooking time","Make it dairy-free","Add a flavor twist"];
+const IMPROVE_PROMPTS = ["Make it vegetarian","Reduce calories by 30%","Make it high protein","Turn into meal prep","Make it keto","Add more vegetables","Make it spicier","Reduce cooking time","Make it dairy-free","Lower the sodium","Make it diabetic-friendly","Make it soft-texture friendly (no soup)","Make it halal","Use budget ingredients","Add a flavor twist"];
 
 const SAMPLE_RECIPES = [
-  { id:1, name:"Roasted Garlic Pasta al Limone", cuisine:"Italian", time:"25 min", calories:480, rating:4.8, emoji:"🍝", diff:"Easy" },
-  { id:2, name:"Miso-Glazed Salmon Bowl", cuisine:"Japanese", time:"30 min", calories:520, rating:4.9, emoji:"🐟", diff:"Intermediate" },
-  { id:3, name:"Smoky Black Bean Tacos", cuisine:"Mexican", time:"20 min", calories:380, rating:4.7, emoji:"🌮", diff:"Easy" },
-  { id:4, name:"Saffron Chicken Tagine", cuisine:"Moroccan", time:"1.5 hr", calories:610, rating:4.6, emoji:"🫕", diff:"Advanced" },
-  { id:5, name:"Thai Basil Fried Rice", cuisine:"Thai", time:"15 min", calories:450, rating:4.7, emoji:"🍚", diff:"Easy" },
-  { id:6, name:"Shakshuka with Feta", cuisine:"Middle Eastern", time:"25 min", calories:340, rating:4.8, emoji:"🍳", diff:"Easy" },
-  { id:7, name:"Beef Bulgogi Bibimbap", cuisine:"Korean", time:"45 min", calories:590, rating:4.9, emoji:"🥩", diff:"Intermediate" },
-  { id:8, name:"Pesto Gnocchi with Burrata", cuisine:"Italian", time:"20 min", calories:560, rating:4.6, emoji:"🧆", diff:"Easy" },
-  { id:9, name:"Harissa Roasted Cauliflower", cuisine:"Mediterranean", time:"40 min", calories:280, rating:4.5, emoji:"🥦", diff:"Easy" },
-  { id:10, name:"Duck Confit with Cherry Jus", cuisine:"French", time:"3 hr", calories:720, rating:4.9, emoji:"🍖", diff:"Advanced" },
-  { id:11, name:"Paneer Butter Masala", cuisine:"Indian", time:"35 min", calories:490, rating:4.8, emoji:"🍛", diff:"Intermediate" },
-  { id:12, name:"Avocado Tuna Poke Bowl", cuisine:"Hawaiian", time:"15 min", calories:430, rating:4.7, emoji:"🥑", diff:"Easy" },
+  { id:1, name:"Roasted Garlic Pasta al Limone", cuisine:"Italian", time:"25 min", mins:25, calories:480, rating:4.8, emoji:"🍝", diff:"Easy", tags:["Vegetarian"] },
+  { id:2, name:"Miso-Glazed Salmon Bowl", cuisine:"Japanese", time:"30 min", mins:30, calories:520, rating:4.9, emoji:"🐟", diff:"Intermediate", tags:["Pescatarian","Dairy-Free","Heart-Healthy"] },
+  { id:3, name:"Smoky Black Bean Tacos", cuisine:"Mexican", time:"20 min", mins:20, calories:380, rating:4.7, emoji:"🌮", diff:"Easy", tags:["Vegan","High-Fiber"] },
+  { id:4, name:"Saffron Chicken Tagine", cuisine:"Moroccan", time:"1.5 hr", mins:90, calories:610, rating:4.6, emoji:"🫕", diff:"Advanced", tags:["Halal-Friendly","Dairy-Free","Soft-Friendly"] },
+  { id:5, name:"Thai Basil Fried Rice", cuisine:"Thai", time:"15 min", mins:15, calories:450, rating:4.7, emoji:"🍚", diff:"Easy", tags:["Dairy-Free"] },
+  { id:6, name:"Shakshuka with Feta", cuisine:"Middle Eastern", time:"25 min", mins:25, calories:340, rating:4.8, emoji:"🍳", diff:"Easy", tags:["Vegetarian","Soft-Friendly","Low-Carb"] },
+  { id:7, name:"Beef Bulgogi Bibimbap", cuisine:"Korean", time:"45 min", mins:45, calories:590, rating:4.9, emoji:"🥩", diff:"Intermediate", tags:["Dairy-Free","High-Protein"] },
+  { id:8, name:"Pesto Gnocchi with Burrata", cuisine:"Italian", time:"20 min", mins:20, calories:560, rating:4.6, emoji:"🧆", diff:"Easy", tags:["Vegetarian","Soft-Friendly"] },
+  { id:9, name:"Harissa Roasted Cauliflower", cuisine:"Mediterranean", time:"40 min", mins:40, calories:280, rating:4.5, emoji:"🥦", diff:"Easy", tags:["Vegan","Low-Carb","Anti-Inflammatory"] },
+  { id:10, name:"Duck Confit with Cherry Jus", cuisine:"French", time:"3 hr", mins:180, calories:720, rating:4.9, emoji:"🍖", diff:"Advanced", tags:["Gluten-Free","Soft-Friendly"] },
+  { id:11, name:"Paneer Butter Masala", cuisine:"Indian", time:"35 min", mins:35, calories:490, rating:4.8, emoji:"🍛", diff:"Intermediate", tags:["Vegetarian","Soft-Friendly"] },
+  { id:12, name:"Avocado Tuna Poke Bowl", cuisine:"Hawaiian", time:"15 min", mins:15, calories:430, rating:4.7, emoji:"🥑", diff:"Easy", tags:["Pescatarian","Dairy-Free","Heart-Healthy"] },
+  { id:13, name:"Jollof Rice with Chicken", cuisine:"Nigerian", time:"50 min", mins:50, calories:560, rating:4.9, emoji:"🍗", diff:"Intermediate", tags:["Halal-Friendly","Dairy-Free"] },
+  { id:14, name:"Doro Wat with Injera", cuisine:"Ethiopian", time:"1.5 hr", mins:90, calories:540, rating:4.8, emoji:"🍲", diff:"Intermediate", tags:["Dairy-Free","Soft-Friendly"] },
+  { id:15, name:"Phở Gà (Chicken Pho)", cuisine:"Vietnamese", time:"1 hr", mins:60, calories:420, rating:4.8, emoji:"🍜", diff:"Intermediate", tags:["Dairy-Free","Gluten-Free"] },
+  { id:16, name:"Chicken Adobo", cuisine:"Filipino", time:"45 min", mins:45, calories:510, rating:4.7, emoji:"🍛", diff:"Easy", tags:["Dairy-Free","Soft-Friendly"] },
+  { id:17, name:"Lomo Saltado", cuisine:"Peruvian", time:"30 min", mins:30, calories:580, rating:4.7, emoji:"🥘", diff:"Intermediate", tags:["Dairy-Free"] },
+  { id:18, name:"Jerk Chicken with Rice & Peas", cuisine:"Jamaican", time:"1 hr", mins:60, calories:620, rating:4.8, emoji:"🌶️", diff:"Intermediate", tags:["Dairy-Free","Gluten-Free"] },
+  { id:19, name:"Mujadara (Lentils & Rice)", cuisine:"Lebanese", time:"40 min", mins:40, calories:390, rating:4.6, emoji:"🫘", diff:"Easy", tags:["Vegan","Diabetic-Friendly","Soft-Friendly","High-Fiber"] },
+  { id:20, name:"Shrimp & Grits", cuisine:"Southern / Soul Food", time:"35 min", mins:35, calories:550, rating:4.8, emoji:"🦐", diff:"Intermediate", tags:["Gluten-Free","Soft-Friendly"] },
+  { id:21, name:"İmam Bayıldı (Stuffed Eggplant)", cuisine:"Turkish", time:"1 hr", mins:60, calories:310, rating:4.6, emoji:"🍆", diff:"Intermediate", tags:["Vegan","Heart-Healthy","Soft-Friendly"] },
+  { id:22, name:"Khoresh Fesenjan", cuisine:"Persian", time:"1.5 hr", mins:90, calories:600, rating:4.7, emoji:"🍯", diff:"Advanced", tags:["Dairy-Free","Gluten-Free","Soft-Friendly"] },
+  { id:23, name:"Feijoada Vegetariana", cuisine:"Brazilian", time:"1 hr", mins:60, calories:470, rating:4.5, emoji:"🍳", diff:"Intermediate", tags:["Vegan","High-Fiber","Soft-Friendly"] },
+  { id:24, name:"Gumbo with Okra", cuisine:"Cajun & Creole", time:"1.5 hr", mins:90, calories:530, rating:4.8, emoji:"🥣", diff:"Advanced", tags:["Dairy-Free","Soft-Friendly"] },
 ];
 
-const PANTRY_ITEMS = [
+const PANTRY_ITEMS: PantryItem[] = [
   { name:"Chicken Breast", qty:"500g", status:"ok" },
   { name:"Garlic", qty:"1 bulb", status:"ok" },
   { name:"Cherry Tomatoes", qty:"250g", status:"ok" },
@@ -580,7 +725,7 @@ const PANTRY_ITEMS = [
   { name:"Eggs", qty:"4", status:"ok" },
 ];
 
-const MEAL_PLAN: Record<string, {b:string;l:string;d:string;cal:number}> = {
+const MEAL_PLAN: MealPlan = {
   Mon: { b:"Greek Yogurt Parfait", l:"Chicken Caesar Wrap", d:"Salmon Teriyaki", cal:1820 },
   Tue: { b:"Avocado Toast", l:"Lentil Soup", d:"Beef Stir Fry", cal:1750 },
   Wed: { b:"Overnight Oats", l:"Caprese Salad", d:"Pasta Primavera", cal:1680 },
@@ -590,8 +735,17 @@ const MEAL_PLAN: Record<string, {b:string;l:string;d:string;cal:number}> = {
   Sun: { b:"Shakshuka", l:"Mezze Platter", d:"Roast Chicken", cal:1850 },
 };
 
+const PLAN_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const BREAKFAST_POOL = ["Greek Yogurt Parfait","Avocado Toast","Overnight Oats","Smoothie Bowl","Eggs Benedict","French Toast","Shakshuka"];
+const LUNCH_POOL = ["Chicken Caesar Wrap","Lentil Soup","Caprese Salad","Turkey Panini","Poke Bowl","Caesar Salad","Mezze Platter"];
+const DINNER_POOL = ["Salmon Teriyaki","Beef Stir Fry","Pasta Primavera","Chicken Tikka","Margherita Pizza","BBQ Ribs","Roast Chicken"];
+
 // ─── Types ───────────────────────────────────────────────────────────────────
-interface PantryItem { name: string; qty: string; status: string; }
+type PantryStatus = "ok" | "low";
+type MealKey = "b" | "l" | "d";
+type MealPlan = Record<string, { b: string; l: string; d: string; cal: number }>;
+
+interface PantryItem { name: string; qty: string; status: PantryStatus; }
 interface Ingredient { amount: string; name: string; }
 interface Nutrition { calories: number; protein: number; carbs: number; fat: number; }
 interface Recipe {
@@ -602,33 +756,170 @@ interface Recipe {
   emoji?: string; calories?: number; rating?: number;
 }
 
+const STORAGE_KEYS = {
+  saved: "culina.savedRecipes.v1",
+  pantry: "culina.pantryItems.v1",
+  mealPlan: "culina.mealPlan.v1",
+};
+
 // ─── API ─────────────────────────────────────────────────────────────────────
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function stringValue(value: unknown, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function numberValue(value: unknown, fallback = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/[^\d.-]/g, ""));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function extractJson(text: string) {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
+  const candidate = fenced || text;
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error("The AI response did not include a JSON object.");
+  }
+
+  return candidate.slice(start, end + 1);
+}
+
+function parseRecipe(text: string): Recipe {
+  const parsed: unknown = JSON.parse(extractJson(text));
+
+  if (!isRecord(parsed)) {
+    throw new Error("The AI response was not a recipe object.");
+  }
+
+  const ingredients = Array.isArray(parsed.ingredients)
+    ? parsed.ingredients
+        .filter(isRecord)
+        .map((item) => ({
+          amount: stringValue(item.amount, "as needed"),
+          name: stringValue(item.name),
+        }))
+        .filter((item) => item.name)
+    : [];
+
+  const steps = Array.isArray(parsed.steps)
+    ? parsed.steps.map((step) => stringValue(step)).filter(Boolean)
+    : [];
+
+  const nutrition = isRecord(parsed.nutrition) ? parsed.nutrition : {};
+  const recipe: Recipe = {
+    name: stringValue(parsed.name),
+    cuisine: stringValue(parsed.cuisine, "Custom"),
+    description: stringValue(parsed.description),
+    time: stringValue(parsed.time, "Flexible"),
+    difficulty: stringValue(parsed.difficulty, "Intermediate"),
+    servings: Math.max(1, Math.round(numberValue(parsed.servings, 2))),
+    ingredients,
+    steps,
+    nutrition: {
+      calories: Math.max(0, Math.round(numberValue(nutrition.calories))),
+      protein: Math.max(0, Math.round(numberValue(nutrition.protein))),
+      carbs: Math.max(0, Math.round(numberValue(nutrition.carbs))),
+      fat: Math.max(0, Math.round(numberValue(nutrition.fat))),
+    },
+    tips: stringValue(parsed.tips),
+    emoji: stringValue(parsed.emoji),
+    calories: numberValue(parsed.calories),
+    rating: numberValue(parsed.rating),
+  };
+
+  if (!recipe.name || ingredients.length === 0 || steps.length === 0) {
+    throw new Error("The AI recipe was missing a name, ingredients, or steps.");
+  }
+
+  return recipe;
+}
+
 async function callClaude(prompt: string): Promise<Recipe> {
   const res = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      messages: [{ role: "user", content: prompt }]
-    })
+    body: JSON.stringify({ prompt })
   });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    const message = isRecord(errorBody) && typeof errorBody.error === "string"
+      ? errorBody.error
+      : `API error: ${res.status}`;
+    throw new Error(message);
+  }
   const data = await res.json();
   const text = (data.content as Array<{type:string;text?:string}>)
     ?.map(b => b.text || "").join("") || "";
-  const clean = text.replace(/```json|```/g, "").trim();
-  return JSON.parse(clean);
+  return parseRecipe(text);
 }
 
-function buildRecipePrompt(p: {ingredients:string[];cuisine:string;diet:string;time:string;skill:string;calories:string}) {
+function usePersistentState<T>(key: string, fallback: T) {
+  // Server and first client render both use `fallback` so SSR hydration matches;
+  // stored data is loaded after mount, then changes are persisted.
+  const [value, setValue] = useState<T>(fallback);
+  const hydratedRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(key);
+      if (stored) setValue(JSON.parse(stored) as T);
+    } catch {
+      // Storage may be unavailable in private mode or restricted browsers.
+    }
+  }, [key]);
+
+  useEffect(() => {
+    if (!hydratedRef.current) {
+      hydratedRef.current = true;
+      return;
+    }
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      // Storage may be unavailable in private mode or restricted browsers.
+    }
+  }, [key, value]);
+
+  return [value, setValue] as const;
+}
+
+function textureInstruction(texture: string) {
+  if (!texture || texture === "Any Texture" || texture === "Regular") return "";
+  const base = `Texture requirement: ${texture}. CRITICAL: do NOT default to soup. Offer variety — casseroles, braises, egg dishes, flaky fish, slow-cooked stews, soft grain bowls, polenta, risotto, well-cooked legumes, soft desserts. `;
+  const detail: Record<string, string> = {
+    "Soft Foods (easy-chew)": "Everything must be tender and easy to chew with no hard, crunchy, tough, or stringy elements. A fork should cut every component.",
+    "Minced & Moist": "All components finely minced (≤4mm pieces) and served moist with sauce or gravy. No hard lumps or dry textures.",
+    "Puréed": "Every component must be smooth-puréed with no lumps. Purée components separately to preserve distinct flavors and colors; suggest plating that keeps them appetizing.",
+    "Smooth / Liquid": "Fully smooth, drinkable or spoonable consistency throughout. Think savory blends, smoothies, enriched creams — strained where needed.",
+  };
+  return base + (detail[texture] || "");
+}
+
+function buildRecipePrompt(p: {ingredients:string[];cuisine:string;diets:string[];customDiet:string;texture:string;time:string;skill:string;calories:string}) {
   const ing = p.ingredients.length ? p.ingredients.join(", ") : "pantry staples";
-  return `You are a world-class chef AI. Create a restaurant-quality recipe.
+  const diets = p.diets.length ? p.diets.join(", ") : "none";
+  const textureNote = textureInstruction(p.texture);
+  return `You are a world-class chef AI with deep knowledge of global cuisines and clinical/cultural dietary needs. Create a restaurant-quality recipe.
 
 Ingredients: ${ing}
-Cuisine: ${p.cuisine || "any"}
-Diet: ${p.diet || "none"}
+Cuisine: ${p.cuisine || "any"} (be authentic to the cuisine's techniques and flavor traditions)
+Dietary requirements (ALL must be strictly satisfied): ${diets}
+${p.customDiet ? `Custom restrictions/notes from the user (treat as hard requirements): ${p.customDiet}` : ""}
+${textureNote ? textureNote : ""}
 Time: ${p.time || "flexible"}
 Skill: ${p.skill || "intermediate"}
 Calories: ${p.calories || "flexible"}
+
+If dietary requirements conflict with an ingredient, substitute it appropriately and mention the swap in tips.
 
 Respond ONLY with valid JSON, no markdown:
 {"name":"...","cuisine":"...","description":"...","time":"...","difficulty":"Easy|Intermediate|Advanced","servings":2,"ingredients":[{"amount":"...","name":"..."}],"steps":["..."],"nutrition":{"calories":0,"protein":0,"carbs":0,"fat":0},"tips":"..."}`;
@@ -650,10 +941,75 @@ Respond ONLY with valid JSON, no markdown:
 {"name":"${card.name}","cuisine":"${card.cuisine}","description":"...","time":"${card.time}","difficulty":"${card.diff}","servings":2,"ingredients":[{"amount":"...","name":"..."}],"steps":["..."],"nutrition":{"calories":${card.calories},"protein":0,"carbs":0,"fat":0},"tips":"..."}`;
 }
 
+function buildMealPlan(savedRecipes: Recipe[], seed = Date.now()): MealPlan {
+  const savedNames = savedRecipes.map(recipe => recipe.name).filter(Boolean);
+  const lunchPool = [...savedNames, ...LUNCH_POOL, ...SAMPLE_RECIPES.map(recipe => recipe.name)];
+  const dinnerPool = [...SAMPLE_RECIPES.map(recipe => recipe.name), ...savedNames, ...DINNER_POOL];
+  const offset = Math.floor(seed / 1000) % 997;
+
+  return PLAN_DAYS.reduce<MealPlan>((plan, day, index) => ({
+    ...plan,
+    [day]: {
+      b: BREAKFAST_POOL[(index + offset) % BREAKFAST_POOL.length],
+      l: lunchPool[(index * 2 + offset) % lunchPool.length],
+      d: dinnerPool[(index * 3 + offset) % dinnerPool.length],
+      cal: 1650 + ((index * 83 + offset) % 500),
+    },
+  }), {});
+}
+
+// ─── Serving scaler ──────────────────────────────────────────────────────────
+const UNICODE_FRACTIONS: Record<string, number> = { "¼":0.25, "½":0.5, "¾":0.75, "⅓":1/3, "⅔":2/3, "⅛":0.125, "⅜":0.375, "⅝":0.625, "⅞":0.875 };
+
+function parseLeadingQuantity(amount: string): { value: number; rest: string } | null {
+  const m = amount.trim().match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d*[¼½¾⅓⅔⅛⅜⅝⅞]|\d+(?:[.,]\d+)?)\s*(.*)$/);
+  if (!m) return null;
+  const raw = m[1];
+  let value: number;
+  if (raw.includes("/")) {
+    const parts = raw.split(/\s+/);
+    value = parts.length === 2
+      ? parseInt(parts[0], 10) + (() => { const [n, d] = parts[1].split("/").map(Number); return d ? n / d : 0; })()
+      : (() => { const [n, d] = raw.split("/").map(Number); return d ? n / d : NaN; })();
+  } else {
+    const uni = raw.match(/[¼½¾⅓⅔⅛⅜⅝⅞]/)?.[0];
+    if (uni) {
+      const whole = raw.replace(uni, "");
+      value = (whole ? parseInt(whole, 10) : 0) + UNICODE_FRACTIONS[uni];
+    } else {
+      value = parseFloat(raw.replace(",", "."));
+    }
+  }
+  if (!Number.isFinite(value)) return null;
+  return { value, rest: m[2] };
+}
+
+function formatQuantity(value: number): string {
+  const whole = Math.floor(value + 1e-6);
+  const frac = value - whole;
+  const NICE: Array<[number, string]> = [[0,""],[0.125,"⅛"],[0.25,"¼"],[1/3,"⅓"],[0.375,"⅜"],[0.5,"½"],[0.625,"⅝"],[2/3,"⅔"],[0.75,"¾"],[0.875,"⅞"],[1,""]];
+  let best = NICE[0]; let bestDiff = Infinity;
+  for (const cand of NICE) { const d = Math.abs(frac - cand[0]); if (d < bestDiff) { bestDiff = d; best = cand; } }
+  if (bestDiff <= 0.04) {
+    const w = whole + (best[0] === 1 ? 1 : 0);
+    const f = best[0] === 1 ? "" : best[1];
+    if (!w && !f) return "0";
+    return `${w || (f ? "" : w)}${w && f ? " " : ""}${f}` || String(w);
+  }
+  return value < 10 ? String(Math.round(value * 100) / 100) : String(Math.round(value));
+}
+
+function scaleAmount(amount: string, factor: number): string {
+  if (factor === 1) return amount;
+  const parsed = parseLeadingQuantity(amount);
+  if (!parsed) return amount;
+  return `${formatQuantity(parsed.value * factor)}${parsed.rest ? " " + parsed.rest : ""}`.trim();
+}
+
 // ─── Toast ───────────────────────────────────────────────────────────────────
 function Toast({ toasts }: { toasts: Array<{id:number;msg:string;icon:string}> }) {
   return (
-    <div className="toast-container">
+    <div className="toast-container" role="status" aria-live="polite" aria-atomic="true">
       {toasts.map(t => (
         <div key={t.id} className="toast">{t.icon} {t.msg}</div>
       ))}
@@ -662,15 +1018,45 @@ function Toast({ toasts }: { toasts: Array<{id:number;msg:string;icon:string}> }
 }
 
 // ─── RecipeOutput ─────────────────────────────────────────────────────────────
-function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner }: {
+function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToast }: {
   recipe: Recipe; saved: boolean;
   onSave: () => void; onImprove: (i: string) => void;
-  onAddToPlanner?: (day: string, meal: "b"|"l"|"d") => void;
+  onAddToPlanner?: (day: string, meal: MealKey) => void;
+  onToast?: (msg: string, icon?: string) => void;
 }) {
   const [showPicker, setShowPicker] = useState(false);
   const [pickerDay, setPickerDay] = useState("Mon");
-  const [pickerMeal, setPickerMeal] = useState<"b"|"l"|"d">("d");
+  const [pickerMeal, setPickerMeal] = useState<MealKey>("d");
+  const [cookMode, setCookMode] = useState(false);
+  const [checkedIng, setCheckedIng] = useState<Set<number>>(new Set());
+  const [checkedSteps, setCheckedSteps] = useState<Set<number>>(new Set());
+  const [servings, setServings] = useState(recipe.servings || 2);
   const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+
+  useEffect(() => {
+    setServings(recipe.servings || 2);
+    setCheckedIng(new Set());
+    setCheckedSteps(new Set());
+    setCookMode(false);
+  }, [recipe.name, recipe.servings]);
+
+  const factor = (recipe.servings || 1) > 0 ? servings / (recipe.servings || 1) : 1;
+  const toggleSet = (set: Set<number>, i: number) => {
+    const next = new Set(set);
+    if (next.has(i)) next.delete(i); else next.add(i);
+    return next;
+  };
+  const stepProgress = recipe.steps?.length ? Math.round((checkedSteps.size / recipe.steps.length) * 100) : 0;
+
+  const copyText = async (text: string, success: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      onToast?.(success, "✓");
+    } catch {
+      onToast?.("Copy failed", "!");
+    }
+  };
+
   return (
     <div className="recipe-output">
       <div className="recipe-header">
@@ -678,12 +1064,21 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner }: {
         <div className="recipe-name">{recipe.name}</div>
         <div className="recipe-desc">{recipe.description}</div>
         <div className="recipe-meta">
-          {[["Time", `⏱ ${recipe.time}`],["Difficulty",`◆ ${recipe.difficulty}`],["Servings",`◎ ${recipe.servings}`],["Calories",`🔥 ${recipe.nutrition?.calories}`]].map(([label,val])=>(
+          {[["Time", `⏱ ${recipe.time}`],["Difficulty",`◆ ${recipe.difficulty}`],["Calories / serving",`🔥 ${recipe.nutrition?.calories}`]].map(([label,val])=>(
             <div key={label} className="recipe-meta-item">
               <span className="recipe-meta-label">{label}</span>
               <span className="recipe-meta-val">{val}</span>
             </div>
           ))}
+          <div className="recipe-meta-item">
+            <span className="recipe-meta-label">Servings</span>
+            <span className="serving-stepper">
+              <button className="serving-btn" aria-label="Decrease servings" onClick={()=>setServings(s=>Math.max(1,s-1))}>−</button>
+              <span className="recipe-meta-val serving-count">◎ {servings}</span>
+              <button className="serving-btn" aria-label="Increase servings" onClick={()=>setServings(s=>Math.min(24,s+1))}>+</button>
+            </span>
+            {factor !== 1 && <span className="serving-note">amounts ×{Math.round(factor*100)/100}</span>}
+          </div>
         </div>
       </div>
       <div className="recipe-body">
@@ -691,8 +1086,10 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner }: {
           <div className="recipe-section-title">◎ Ingredients</div>
           <ul className="ingredient-list">
             {recipe.ingredients?.map((ing, i) => (
-              <li key={i} className="ingredient-item">
-                <span className="ingredient-amount">{ing.amount}</span>
+              <li key={i} className={`ingredient-item${cookMode?" checkable":""}${cookMode&&checkedIng.has(i)?" checked":""}`}
+                onClick={cookMode ? ()=>setCheckedIng(s=>toggleSet(s,i)) : undefined}>
+                {cookMode && <span className={`check-box${checkedIng.has(i)?" on":""}`}>{checkedIng.has(i)?"✓":""}</span>}
+                <span className="ingredient-amount">{scaleAmount(ing.amount, factor)}</span>
                 <span>{ing.name}</span>
               </li>
             ))}
@@ -705,11 +1102,23 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner }: {
           )}
         </div>
         <div>
-          <div className="recipe-section-title">◈ Instructions</div>
+          <div className="recipe-section-title" style={{justifyContent:"space-between"}}>
+            <span>◈ Instructions</span>
+            <button className={`cook-mode-toggle${cookMode?" on":""}`} onClick={()=>setCookMode(m=>!m)}>
+              {cookMode ? "✓ Cooking" : "👨‍🍳 Cook Mode"}
+            </button>
+          </div>
+          {cookMode && (
+            <div className="cook-progress">
+              <div className="cook-progress-bar"><div className="cook-progress-fill" style={{width:`${stepProgress}%`}}/></div>
+              <span className="cook-progress-label">{checkedSteps.size}/{recipe.steps?.length || 0} steps{stepProgress===100?" — Bon appétit! 🎉":""}</span>
+            </div>
+          )}
           <ol className="step-list">
             {recipe.steps?.map((step, i) => (
-              <li key={i} className="step-item">
-                <span className="step-num">{i+1}</span>
+              <li key={i} className={`step-item${cookMode?" checkable":""}${cookMode&&checkedSteps.has(i)?" checked":""}`}
+                onClick={cookMode ? ()=>setCheckedSteps(s=>toggleSet(s,i)) : undefined}>
+                <span className="step-num">{cookMode&&checkedSteps.has(i)?"✓":i+1}</span>
                 <span className="step-text">{step}</span>
               </li>
             ))}
@@ -738,12 +1147,12 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner }: {
             {saved ? "✓ Saved" : "♡ Save Recipe"}
           </button>
           <button className="btn-action" onClick={() => {
-            const txt = `${recipe.name}\n\nIngredients:\n${recipe.ingredients?.map(i=>`${i.amount} ${i.name}`).join('\n')}\n\nSteps:\n${recipe.steps?.map((s,i)=>`${i+1}. ${s}`).join('\n')}`;
-            navigator.clipboard.writeText(txt);
+            const txt = `${recipe.name} (serves ${servings})\n\nIngredients:\n${recipe.ingredients?.map(i=>`${scaleAmount(i.amount, factor)} ${i.name}`).join('\n')}\n\nSteps:\n${recipe.steps?.map((s,i)=>`${i+1}. ${s}`).join('\n')}`;
+            copyText(txt, "Recipe copied");
           }}>↗ Copy</button>
           <button className="btn-action" onClick={() => {
-            const list = `${recipe.name} — Grocery List\n\n${recipe.ingredients?.map(i=>`• ${i.amount} ${i.name}`).join('\n')}`;
-            navigator.clipboard.writeText(list);
+            const list = `${recipe.name} — Grocery List (serves ${servings})\n\n${recipe.ingredients?.map(i=>`• ${scaleAmount(i.amount, factor)} ${i.name}`).join('\n')}`;
+            copyText(list, "Grocery list copied");
           }}>🛒 Grocery List</button>
           <div style={{position:"relative"}}>
             <button className="btn-action" onClick={() => setShowPicker(p=>!p)}>📅 Add to Planner</button>
@@ -778,10 +1187,11 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner }: {
 }
 
 // ─── GeneratorPage ────────────────────────────────────────────────────────────
-function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner }: {
+function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, onToast }: {
   onSave: (r:Recipe)=>void; savedIds: Set<string>;
   initialIngredients?: string[];
-  onAddToPlanner: (recipe: Recipe, day: string, meal: "b"|"l"|"d") => void;
+  onAddToPlanner: (recipe: Recipe, day: string, meal: MealKey) => void;
+  onToast: (msg: string, icon?: string) => void;
 }) {
   const [ingredients, setIngredients] = useState<string[]>(initialIngredients || []);
 
@@ -790,10 +1200,13 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner }:
   }, [initialIngredients]);
   const [input, setInput] = useState("");
   const [cuisine, setCuisine] = useState("Any Cuisine");
-  const [diet, setDiet] = useState("No Restrictions");
+  const [diets, setDiets] = useState<string[]>([]);
+  const [customDiet, setCustomDiet] = useState("");
+  const [texture, setTexture] = useState("Any Texture");
   const [time, setTime] = useState("Any Time");
   const [skill, setSkill] = useState("Any Level");
   const [calories, setCalories] = useState("Any Calories");
+  const [showDietPanel, setShowDietPanel] = useState(false);
   const [loading, setLoading] = useState(false);
   const [recipe, setRecipe] = useState<Recipe|null>(null);
   const [error, setError] = useState<string|null>(null);
@@ -805,13 +1218,35 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner }:
     setInput("");
   };
 
-  const generate = async () => {
+  const toggleDiet = (d: string) => {
+    setDiets(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d]);
+  };
+
+  const runGenerate = async (params: {ingredients:string[];cuisine:string;diets:string[];customDiet:string;texture:string;time:string;skill:string;calories:string}) => {
     setLoading(true); setError(null); setRecipe(null);
     try {
-      const result = await callClaude(buildRecipePrompt({ ingredients, cuisine, diet, time, skill, calories }));
+      const result = await callClaude(buildRecipePrompt(params));
       setRecipe(result);
-    } catch { setError("Generation failed — check your API key in .env.local and try again."); }
+    } catch (err) {
+      const msg = err instanceof Error && err.message ? err.message : "Unknown error";
+      setError(`Generation failed: ${msg} — if this persists, check your API key in .env.local.`);
+    }
     finally { setLoading(false); }
+  };
+
+  const generate = () => runGenerate({ ingredients, cuisine, diets, customDiet, texture, time, skill, calories });
+
+  const QUICK = ["chicken","garlic","tomatoes","pasta","lemon","onion","ginger","rice","eggs","cheese"];
+
+  const surprise = () => {
+    const pool = CUISINES.filter(c => c !== "Any Cuisine");
+    const randomCuisine = pool[Math.floor(Math.random() * pool.length)];
+    const baseIngredients = ingredients.length
+      ? ingredients
+      : [...QUICK].sort(() => Math.random() - 0.5).slice(0, 3);
+    setCuisine(randomCuisine);
+    if (!ingredients.length) setIngredients(baseIngredients);
+    runGenerate({ ingredients: baseIngredients, cuisine: randomCuisine, diets, customDiet, texture, time, skill, calories });
   };
 
   const improve = async (instruction: string) => {
@@ -820,11 +1255,12 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner }:
     try {
       const result = await callClaude(buildImprovePrompt(recipe, instruction));
       setRecipe(result);
-    } catch { setError("Improvement failed — please try again."); }
+    } catch (err) {
+      const msg = err instanceof Error && err.message ? err.message : "Unknown error";
+      setError(`Improvement failed: ${msg}`);
+    }
     finally { setImproving(false); }
   };
-
-  const QUICK = ["chicken","garlic","tomatoes","pasta","lemon","onion","ginger","rice","eggs","cheese"];
 
   return (
     <div className="page">
@@ -836,7 +1272,7 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner }:
       <div className="gen-card">
         <div className="gen-card-title"><span style={{fontSize:"1.4rem"}}>◎</span> Your Ingredients</div>
         <div className="ingredient-input-row">
-          <input className="ingredient-input" placeholder="Add an ingredient (e.g. chicken, garlic…)"
+          <input className="ingredient-input" aria-label="Add an ingredient" placeholder="Add an ingredient (e.g. chicken, garlic…)"
             value={input} onChange={e=>setInput(e.target.value)}
             onKeyDown={e=>e.key==="Enter"&&addIngredient()} />
           <button className="btn-add" onClick={addIngredient}>+ Add</button>
@@ -855,23 +1291,85 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner }:
           {ingredients.map(ing=>(
             <span key={ing} className="chip">
               {ing}
-              <button className="chip-x" onClick={()=>setIngredients(p=>p.filter(i=>i!==ing))}>×</button>
+              <button className="chip-x" aria-label={`Remove ${ing}`} onClick={()=>setIngredients(p=>p.filter(i=>i!==ing))}>×</button>
             </span>
           ))}
         </div>
         <div style={{borderTop:"1px solid var(--border)",paddingTop:"1.25rem",marginBottom:"1.25rem"}}>
           <div style={{fontSize:"0.65rem",fontFamily:"Space Mono,monospace",textTransform:"uppercase",letterSpacing:"0.08em",color:"var(--smoke)",marginBottom:"0.75rem"}}>Preferences</div>
           <div className="filter-row">
-            <select className="select-field" value={cuisine} onChange={e=>setCuisine(e.target.value)}>{CUISINES.map(c=><option key={c}>{c}</option>)}</select>
-            <select className="select-field" value={diet} onChange={e=>setDiet(e.target.value)}>{DIETS.map(d=><option key={d}>{d}</option>)}</select>
-            <select className="select-field" value={time} onChange={e=>setTime(e.target.value)}>{TIMES.map(t=><option key={t}>{t}</option>)}</select>
-            <select className="select-field" value={skill} onChange={e=>setSkill(e.target.value)}>{SKILLS.map(s=><option key={s}>{s}</option>)}</select>
-            <select className="select-field" value={calories} onChange={e=>setCalories(e.target.value)}>{CALORIE_OPTIONS.map(c=><option key={c}>{c}</option>)}</select>
+            <select className="select-field" aria-label="Cuisine preference" value={cuisine} onChange={e=>setCuisine(e.target.value)}>
+              <option>Any Cuisine</option>
+              {Object.entries(CUISINE_GROUPS).map(([region, list])=>(
+                <optgroup key={region} label={region}>
+                  {list.map(c=><option key={c}>{c}</option>)}
+                </optgroup>
+              ))}
+            </select>
+            <select className="select-field" aria-label="Texture and consistency preference" value={texture} onChange={e=>setTexture(e.target.value)}>{TEXTURES.map(t=><option key={t}>{t}</option>)}</select>
+            <select className="select-field" aria-label="Cooking time preference" value={time} onChange={e=>setTime(e.target.value)}>{TIMES.map(t=><option key={t}>{t}</option>)}</select>
+            <select className="select-field" aria-label="Skill level preference" value={skill} onChange={e=>setSkill(e.target.value)}>{SKILLS.map(s=><option key={s}>{s}</option>)}</select>
+            <select className="select-field" aria-label="Calorie preference" value={calories} onChange={e=>setCalories(e.target.value)}>{CALORIE_OPTIONS.map(c=><option key={c}>{c}</option>)}</select>
           </div>
+          {texture !== "Any Texture" && texture !== "Regular" && (
+            <div className="texture-note">
+              ✦ {texture} mode: full varied meals — never just soup.
+            </div>
+          )}
         </div>
-        <button className="btn-generate" onClick={generate} disabled={loading||improving}>
-          {loading||improving ? <><div className="shimmer"/><span>{loading?"Generating your recipe…":"Improving recipe…"}</span></> : <><span style={{fontSize:"1.3rem"}}>✦</span><span>Generate Recipe with AI</span></>}
-        </button>
+        <div style={{borderTop:"1px solid var(--border)",paddingTop:"1.25rem",marginBottom:"1.25rem"}}>
+          <button className="diet-panel-toggle" onClick={()=>setShowDietPanel(p=>!p)} aria-expanded={showDietPanel}>
+            <span style={{fontSize:"0.65rem",fontFamily:"Space Mono,monospace",textTransform:"uppercase",letterSpacing:"0.08em",color:"var(--smoke)"}}>
+              Dietary Needs {diets.length > 0 && <span className="nav-badge">{diets.length}</span>}
+            </span>
+            <span className="diet-panel-arrow">{showDietPanel ? "▴" : "▾"}</span>
+          </button>
+          {diets.length > 0 && !showDietPanel && (
+            <div className="chip-list" style={{marginTop:"0.5rem",marginBottom:0}}>
+              {diets.map(d=>(
+                <span key={d} className="chip">
+                  {d}
+                  <button className="chip-x" aria-label={`Remove ${d}`} onClick={()=>toggleDiet(d)}>×</button>
+                </span>
+              ))}
+            </div>
+          )}
+          {showDietPanel && (
+            <div className="diet-panel">
+              {DIET_GROUPS.map(group=>(
+                <div key={group.label} className="diet-group">
+                  <div className="diet-group-label">{group.icon} {group.label}</div>
+                  <div className="improve-chips">
+                    {group.options.map(d=>(
+                      <button key={d} className={`diet-chip${diets.includes(d)?" active":""}`} onClick={()=>toggleDiet(d)} aria-pressed={diets.includes(d)}>
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <div className="diet-group">
+                <div className="diet-group-label">✎ Anything else?</div>
+                <textarea
+                  className="ingredient-input diet-custom"
+                  aria-label="Custom dietary restrictions and notes"
+                  placeholder="Describe anything that doesn't fit above — e.g. post-surgery recovery, chewing difficulty, no raw onions, bariatric portions, only a microwave available, kid-friendly textures…"
+                  value={customDiet}
+                  onChange={e=>setCustomDiet(e.target.value)}
+                  rows={3}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="generate-row">
+          <button className="btn-generate" onClick={generate} disabled={loading||improving}>
+            {loading||improving ? <><div className="shimmer"/><span>{loading?"Generating your recipe…":"Improving recipe…"}</span></> : <><span style={{fontSize:"1.3rem"}}>✦</span><span>Generate Recipe with AI</span></>}
+          </button>
+          <button className="btn-surprise" onClick={surprise} disabled={loading||improving} title="Random cuisine, your dietary needs still respected">
+            🎲 Surprise Me
+          </button>
+        </div>
         {error && <div style={{marginTop:"1rem",padding:"0.75rem 1rem",background:"#FFF0EE",border:"1px solid #FFCDC6",borderRadius:"10px",fontSize:"0.85rem",color:"#C4622D"}}>{error}</div>}
       </div>
       {loading && (
@@ -884,7 +1382,7 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner }:
         </div>
       )}
       {recipe && !loading && (
-        <RecipeOutput recipe={recipe} saved={savedIds.has(recipe.name)} onSave={()=>onSave(recipe)} onImprove={improve} onAddToPlanner={(day,meal)=>onAddToPlanner(recipe,day,meal)}/>
+        <RecipeOutput recipe={recipe} saved={savedIds.has(recipe.name)} onSave={()=>onSave(recipe)} onImprove={improve} onAddToPlanner={(day,meal)=>onAddToPlanner(recipe,day,meal)} onToast={onToast}/>
       )}
     </div>
   );
@@ -893,19 +1391,53 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner }:
 // ─── DiscoverPage ─────────────────────────────────────────────────────────────
 type SampleRecipe = typeof SAMPLE_RECIPES[0];
 
-function DiscoverPage({ onSave, savedIds, onAddToPlanner }: {
+function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
   onSave:(r:Recipe)=>void; savedIds:Set<string>;
-  onAddToPlanner: (recipe: Recipe, day: string, meal: "b"|"l"|"d") => void;
+  onAddToPlanner: (recipe: Recipe, day: string, meal: MealKey) => void;
+  onToast: (msg: string, icon?: string) => void;
 }) {
   const [filter, setFilter] = useState("All");
+  const [dietFilter, setDietFilter] = useState("All");
+  const [timeFilter, setTimeFilter] = useState("All");
+  const [diffFilter, setDiffFilter] = useState("All");
   const [activeCard, setActiveCard] = useState<SampleRecipe|null>(null);
   const [generatedRecipe, setGeneratedRecipe] = useState<Recipe|null>(null);
   const [loading, setLoading] = useState(false);
   const [improving, setImproving] = useState(false);
   const [error, setError] = useState<string|null>(null);
 
-  const filters = ["All","Italian","Japanese","Mexican","Indian","Mediterranean","Thai","Korean","French"];
-  const shown = filter==="All" ? SAMPLE_RECIPES : SAMPLE_RECIPES.filter(r=>r.cuisine===filter);
+  const filters = ["All", ...Array.from(new Set(SAMPLE_RECIPES.map(r=>r.cuisine)))];
+  const dietFilters = ["All", ...Array.from(new Set(SAMPLE_RECIPES.flatMap(r=>r.tags))).sort()];
+  const TIME_FILTERS: Array<[string, (m:number)=>boolean]> = [
+    ["All", ()=>true],
+    ["≤ 30 min", m=>m<=30],
+    ["≤ 1 hr", m=>m<=60],
+    ["Slow & worth it", m=>m>60],
+  ];
+  const DIFF_FILTERS = ["All","Easy","Intermediate","Advanced"];
+
+  const timeFn = TIME_FILTERS.find(([label])=>label===timeFilter)?.[1] ?? (()=>true);
+  const shown = SAMPLE_RECIPES.filter(r=>
+    (filter==="All" || r.cuisine===filter) &&
+    (dietFilter==="All" || r.tags.includes(dietFilter)) &&
+    timeFn(r.mins) &&
+    (diffFilter==="All" || r.diff===diffFilter)
+  );
+
+  useEffect(() => {
+    if (!activeCard) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setActiveCard(null);
+        setGeneratedRecipe(null);
+        setError(null);
+      }
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [activeCard]);
 
   const openCard = async (card: SampleRecipe) => {
     setActiveCard(card);
@@ -915,7 +1447,10 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner }: {
     try {
       const result = await callClaude(buildDiscoverPrompt(card));
       setGeneratedRecipe(result);
-    } catch { setError("Failed to generate recipe — please try again."); }
+    } catch (err) {
+      const msg = err instanceof Error && err.message ? err.message : "Unknown error";
+      setError(`Failed to generate recipe: ${msg}`);
+    }
     finally { setLoading(false); }
   };
 
@@ -927,7 +1462,10 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner }: {
     try {
       const result = await callClaude(buildImprovePrompt(generatedRecipe, instruction));
       setGeneratedRecipe(result);
-    } catch { setError("Improvement failed — please try again."); }
+    } catch (err) {
+      const msg = err instanceof Error && err.message ? err.message : "Unknown error";
+      setError(`Improvement failed: ${msg}`);
+    }
     finally { setImproving(false); }
   };
 
@@ -943,9 +1481,32 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner }: {
           <span className="filter-label">Cuisine:</span>
           {filters.map(f=><button key={f} className={`filter-chip${filter===f?" active":""}`} onClick={()=>setFilter(f)}>{f}</button>)}
         </div>
+        <div className="filter-bar">
+          <span className="filter-label">Diet:</span>
+          {dietFilters.map(f=><button key={f} className={`filter-chip${dietFilter===f?" active":""}`} onClick={()=>setDietFilter(f)}>{f}</button>)}
+        </div>
+        <div className="filter-bar">
+          <span className="filter-label">Time:</span>
+          {TIME_FILTERS.map(([label])=><button key={label} className={`filter-chip${timeFilter===label?" active":""}`} onClick={()=>setTimeFilter(label)}>{label}</button>)}
+          <span className="filter-label" style={{marginLeft:"0.75rem"}}>Skill:</span>
+          {DIFF_FILTERS.map(f=><button key={f} className={`filter-chip${diffFilter===f?" active":""}`} onClick={()=>setDiffFilter(f)}>{f}</button>)}
+          {(filter!=="All"||dietFilter!=="All"||timeFilter!=="All"||diffFilter!=="All") && (
+            <button className="filter-chip" style={{marginLeft:"auto",color:"var(--terra)",borderColor:"var(--terra)"}}
+              onClick={()=>{setFilter("All");setDietFilter("All");setTimeFilter("All");setDiffFilter("All");}}>
+              ✕ Clear ({shown.length} shown)
+            </button>
+          )}
+        </div>
+        {shown.length===0 && (
+          <div className="empty-state">
+            <div className="empty-icon">🔍</div>
+            <div className="empty-text">No recipes match those filters</div>
+            <p style={{fontSize:"0.9rem",color:"var(--smoke)",marginTop:"0.5rem"}}>Try clearing a filter — or use Generate to create exactly what you need.</p>
+          </div>
+        )}
         <div className="recipe-grid">
           {shown.map(r=>(
-            <div key={r.id} className="recipe-card" onClick={()=>openCard(r)}>
+            <button key={r.id} type="button" className="recipe-card" onClick={()=>openCard(r)}>
               <div className="recipe-card-img">
                 <span style={{position:"relative",zIndex:1}}>{r.emoji}</span>
                 <div className="recipe-card-img-overlay"/>
@@ -958,17 +1519,22 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner }: {
                   <span>🔥 {r.calories} cal</span>
                   <span className="recipe-card-rating">★ {r.rating}</span>
                 </div>
+                {r.tags.length > 0 && (
+                  <div className="recipe-card-tags">
+                    {r.tags.slice(0,3).map(t=><span key={t} className="recipe-card-diet-tag">{t}</span>)}
+                  </div>
+                )}
                 <div className="recipe-card-hint">✦ View full recipe →</div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </div>
 
       {activeCard && (
         <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-inner" onClick={e=>e.stopPropagation()}>
-            <button className="modal-close" onClick={closeModal}>✕</button>
+          <div className="modal-inner" role="dialog" aria-modal="true" aria-label={activeCard.name} onClick={e=>e.stopPropagation()}>
+            <button className="modal-close" aria-label="Close recipe dialog" onClick={closeModal}>✕</button>
 
             {loading && (
               <div className="modal-loading-card">
@@ -1003,6 +1569,7 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner }: {
                   onSave={()=>onSave(generatedRecipe)}
                   onImprove={improve}
                   onAddToPlanner={(day,meal)=>onAddToPlanner(generatedRecipe,day,meal)}
+                  onToast={onToast}
                 />
               </div>
             )}
@@ -1023,7 +1590,7 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
   const [editingIdx, setEditingIdx] = useState<number|null>(null);
   const [editName, setEditName] = useState("");
   const [editQty, setEditQty] = useState("");
-  const [editStatus, setEditStatus] = useState("ok");
+  const [editStatus, setEditStatus] = useState<PantryStatus>("ok");
 
   const add = () => {
     if (newItem.trim()) { setItems(p=>[...p,{name:newItem.trim(),qty:"1 unit",status:"ok"}]); setNewItem(""); }
@@ -1045,7 +1612,7 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
           <div className="discover-title">Your <em style={{fontFamily:"Cormorant Garamond,serif",fontStyle:"italic",color:"var(--terra)"}}>pantry</em></div>
         </div>
         <div style={{display:"flex",gap:"0.5rem",marginBottom:"1.5rem"}}>
-          <input className="ingredient-input" placeholder="Add ingredient to pantry…" value={newItem} onChange={e=>setNewItem(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}/>
+          <input className="ingredient-input" aria-label="Add ingredient to pantry" placeholder="Add ingredient to pantry…" value={newItem} onChange={e=>setNewItem(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}/>
           <button className="btn-add" onClick={add}>+ Add</button>
         </div>
         <div className="pantry-grid">
@@ -1055,9 +1622,9 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
               <div key={i} className="pantry-item">
                 {editingIdx===i ? (
                   <div className="pantry-item-edit">
-                    <input className="ingredient-input" style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem"}} value={editName} onChange={e=>setEditName(e.target.value)}/>
+                    <input className="ingredient-input" aria-label="Ingredient name" style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem"}} value={editName} onChange={e=>setEditName(e.target.value)}/>
                     <div className="pantry-item-controls">
-                      <input className="ingredient-input" style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem",width:"90px"}} value={editQty} onChange={e=>setEditQty(e.target.value)} placeholder="qty"/>
+                      <input className="ingredient-input" aria-label="Ingredient quantity" style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem",width:"90px"}} value={editQty} onChange={e=>setEditQty(e.target.value)} placeholder="qty"/>
                       <button className={`pantry-status-toggle ${editStatus}`} onClick={()=>setEditStatus(s=>s==="ok"?"low":"ok")}>
                         {editStatus==="ok"?"In Stock":"Low"}
                       </button>
@@ -1085,10 +1652,12 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
           <div>
             <div className="pantry-card" style={{marginBottom:"1rem"}}>
               <div className="pantry-card-title">🛒 Shopping Suggestions</div>
-              {[["Olive Oil","Running low"],["Parmesan","Running low"],["Heavy Cream","Recipe needs"],["Basil","Recipe needs"]].map(([item,reason])=>(
-                <div key={item} className="pantry-item">
-                  <div className="pantry-item-name"><span className="pantry-item-dot low"/>{item}</div>
-                  <span style={{fontSize:"0.75rem",color:"var(--terra)"}}>{reason}</span>
+              {items.filter(i=>i.status==="low").length===0 ? (
+                <p style={{fontSize:"0.82rem",color:"var(--smoke)",fontStyle:"italic",padding:"0.4rem 0"}}>Nothing running low — your pantry is fully stocked. ✓</p>
+              ) : items.filter(i=>i.status==="low").map(item=>(
+                <div key={item.name} className="pantry-item">
+                  <div className="pantry-item-name"><span className="pantry-item-dot low"/>{item.name}</div>
+                  <span style={{fontSize:"0.75rem",color:"var(--terra)"}}>Running low ({item.qty} left)</span>
                 </div>
               ))}
             </div>
@@ -1097,7 +1666,7 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
               {["Aglio e Olio","Chicken Piccata","Frittata","Lemon Pasta"].map(r=>(
                 <div key={r} style={{padding:"0.4rem 0",fontSize:"0.88rem",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <span>{r}</span>
-                  <span style={{fontSize:"0.75rem",color:"var(--sage)",fontFamily:"Space Mono,monospace"}}>95% match</span>
+                  <span style={{fontSize:"0.75rem",color:"var(--sage)",fontFamily:"Space Mono,monospace"}}>pantry-friendly</span>
                 </div>
               ))}
             </div>
@@ -1109,7 +1678,7 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
 }
 
 // ─── PlannerPage ──────────────────────────────────────────────────────────────
-function PlannerPage({ mealPlan }: { mealPlan: typeof MEAL_PLAN }) {
+function PlannerPage({ mealPlan, onRegenerate }: { mealPlan: MealPlan; onRegenerate: () => void }) {
   const days = Object.keys(mealPlan);
   return (
     <div className="page">
@@ -1125,7 +1694,7 @@ function PlannerPage({ mealPlan }: { mealPlan: typeof MEAL_PLAN }) {
               <div style={{fontFamily:"Cormorant Garamond,serif",fontSize:"1.3rem",fontWeight:600,color:"var(--bark)"}}>{val}</div>
             </div>
           ))}
-          <button style={{padding:"0.75rem 1.25rem",borderRadius:"12px",background:"var(--terra)",color:"white",border:"none",cursor:"pointer",fontFamily:"DM Sans,sans-serif",fontSize:"0.9rem",fontWeight:500,marginLeft:"auto"}}>✦ Regenerate Plan</button>
+          <button onClick={onRegenerate} style={{padding:"0.75rem 1.25rem",borderRadius:"12px",background:"var(--terra)",color:"white",border:"none",cursor:"pointer",fontFamily:"DM Sans,sans-serif",fontSize:"0.9rem",fontWeight:500,marginLeft:"auto"}}>✦ Regenerate Plan</button>
         </div>
         <div className="planner-grid">
           {days.map(day=>(
@@ -1192,11 +1761,11 @@ function SavedPage({ saved, onRemove }: { saved:Recipe[]; onRemove:(r:Recipe)=>v
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function RecipePlatform() {
   const [tab, setTab] = useState("generate");
-  const [saved, setSaved] = useState<Recipe[]>([]);
+  const [saved, setSaved] = usePersistentState<Recipe[]>(STORAGE_KEYS.saved, []);
   const [toasts, setToasts] = useState<Array<{id:number;msg:string;icon:string}>>([]);
-  const [pantryItems, setPantryItems] = useState<PantryItem[]>(PANTRY_ITEMS);
+  const [pantryItems, setPantryItems] = usePersistentState<PantryItem[]>(STORAGE_KEYS.pantry, PANTRY_ITEMS);
   const [pendingIngredients, setPendingIngredients] = useState<string[]>([]);
-  const [mealPlan, setMealPlan] = useState(MEAL_PLAN);
+  const [mealPlan, setMealPlan] = usePersistentState<MealPlan>(STORAGE_KEYS.mealPlan, MEAL_PLAN);
   const toastRef = useRef(0);
 
   const addToast = (msg: string, icon = "✓") => {
@@ -1215,32 +1784,37 @@ export default function RecipePlatform() {
     }
   };
 
-  const handleAddToPlanner = (recipe: Recipe, day: string, meal: "b"|"l"|"d") => {
+  const handleAddToPlanner = (recipe: Recipe, day: string, meal: MealKey) => {
     setMealPlan(p=>({...p, [day]:{...p[day],[meal]:recipe.name}}));
     const label = meal==="b"?"Breakfast":meal==="l"?"Lunch":"Dinner";
     addToast(`Added to ${day} ${label}`, "📅");
+  };
+
+  const handleRegeneratePlan = () => {
+    setMealPlan(buildMealPlan(saved));
+    addToast("Meal plan regenerated", "✦");
   };
 
   const savedIds = new Set(saved.map(r=>r.name));
 
   return (
     <>
-      <style>{FONTS}{CSS}</style>
+      <style dangerouslySetInnerHTML={{ __html: FONTS + CSS }} />
       <div className="app">
-        <nav className="nav">
+        <nav className="nav" aria-label="Primary">
           <div className="nav-logo"><span style={{fontSize:"1.2rem"}}>◈</span> Culinari<span>a</span></div>
-          <div className="nav-tabs">
+          <div className="nav-tabs" role="tablist" aria-label="Culina sections">
             {[{id:"generate",label:"Generate"},{id:"discover",label:"Discover"},{id:"pantry",label:"Pantry"},{id:"planner",label:"Planner"},{id:"saved",label:"Saved",badge:saved.length||null}].map(t=>(
-              <button key={t.id} className={`nav-tab${tab===t.id?" active":""}`} onClick={()=>setTab(t.id)}>
+              <button key={t.id} role="tab" aria-selected={tab===t.id} className={`nav-tab${tab===t.id?" active":""}`} onClick={()=>setTab(t.id)}>
                 {t.label}{t.badge?<span className="nav-badge">{t.badge}</span>:null}
               </button>
             ))}
           </div>
         </nav>
-        {tab==="generate" && <GeneratorPage onSave={handleSave} savedIds={savedIds} initialIngredients={pendingIngredients} onAddToPlanner={handleAddToPlanner}/>}
-        {tab==="discover" && <DiscoverPage onSave={handleSave} savedIds={savedIds} onAddToPlanner={handleAddToPlanner}/>}
+        {tab==="generate" && <GeneratorPage onSave={handleSave} savedIds={savedIds} initialIngredients={pendingIngredients} onAddToPlanner={handleAddToPlanner} onToast={addToast}/>}
+        {tab==="discover" && <DiscoverPage onSave={handleSave} savedIds={savedIds} onAddToPlanner={handleAddToPlanner} onToast={addToast}/>}
         {tab==="pantry" && <PantryPage items={pantryItems} setItems={setPantryItems} onGenerateFromPantry={()=>{setPendingIngredients(pantryItems.map(i=>i.name));setTab("generate");}}/>}
-        {tab==="planner" && <PlannerPage mealPlan={mealPlan}/>}
+        {tab==="planner" && <PlannerPage mealPlan={mealPlan} onRegenerate={handleRegeneratePlan}/>}
         {tab==="saved" && <SavedPage saved={saved} onRemove={handleSave}/>}
         <Toast toasts={toasts}/>
       </div>
