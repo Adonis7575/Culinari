@@ -339,8 +339,10 @@ const CSS = `
     border: 1px solid var(--border); overflow: hidden;
     cursor: pointer; transition: all 0.25s;
     animation: fadeUp 0.3s ease;
+    appearance: none; width: 100%; text-align: left;
+    font-family: inherit; color: inherit;
   }
-  .recipe-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+  .recipe-card:hover, .recipe-card:focus-visible { transform: translateY(-4px); box-shadow: var(--shadow-lg); outline: none; }
   .recipe-card-img {
     width: 100%; height: 180px; object-fit: cover;
     background: linear-gradient(135deg, var(--warm-white), var(--ash));
@@ -569,7 +571,7 @@ const SAMPLE_RECIPES = [
   { id:12, name:"Avocado Tuna Poke Bowl", cuisine:"Hawaiian", time:"15 min", calories:430, rating:4.7, emoji:"🥑", diff:"Easy" },
 ];
 
-const PANTRY_ITEMS = [
+const PANTRY_ITEMS: PantryItem[] = [
   { name:"Chicken Breast", qty:"500g", status:"ok" },
   { name:"Garlic", qty:"1 bulb", status:"ok" },
   { name:"Cherry Tomatoes", qty:"250g", status:"ok" },
@@ -580,7 +582,7 @@ const PANTRY_ITEMS = [
   { name:"Eggs", qty:"4", status:"ok" },
 ];
 
-const MEAL_PLAN: Record<string, {b:string;l:string;d:string;cal:number}> = {
+const MEAL_PLAN: MealPlan = {
   Mon: { b:"Greek Yogurt Parfait", l:"Chicken Caesar Wrap", d:"Salmon Teriyaki", cal:1820 },
   Tue: { b:"Avocado Toast", l:"Lentil Soup", d:"Beef Stir Fry", cal:1750 },
   Wed: { b:"Overnight Oats", l:"Caprese Salad", d:"Pasta Primavera", cal:1680 },
@@ -590,8 +592,17 @@ const MEAL_PLAN: Record<string, {b:string;l:string;d:string;cal:number}> = {
   Sun: { b:"Shakshuka", l:"Mezze Platter", d:"Roast Chicken", cal:1850 },
 };
 
+const PLAN_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const BREAKFAST_POOL = ["Greek Yogurt Parfait","Avocado Toast","Overnight Oats","Smoothie Bowl","Eggs Benedict","French Toast","Shakshuka"];
+const LUNCH_POOL = ["Chicken Caesar Wrap","Lentil Soup","Caprese Salad","Turkey Panini","Poke Bowl","Caesar Salad","Mezze Platter"];
+const DINNER_POOL = ["Salmon Teriyaki","Beef Stir Fry","Pasta Primavera","Chicken Tikka","Margherita Pizza","BBQ Ribs","Roast Chicken"];
+
 // ─── Types ───────────────────────────────────────────────────────────────────
-interface PantryItem { name: string; qty: string; status: string; }
+type PantryStatus = "ok" | "low";
+type MealKey = "b" | "l" | "d";
+type MealPlan = Record<string, { b: string; l: string; d: string; cal: number }>;
+
+interface PantryItem { name: string; qty: string; status: PantryStatus; }
 interface Ingredient { amount: string; name: string; }
 interface Nutrition { calories: number; protein: number; carbs: number; fat: number; }
 interface Recipe {
@@ -602,21 +613,133 @@ interface Recipe {
   emoji?: string; calories?: number; rating?: number;
 }
 
+const STORAGE_KEYS = {
+  saved: "culina.savedRecipes.v1",
+  pantry: "culina.pantryItems.v1",
+  mealPlan: "culina.mealPlan.v1",
+};
+
 // ─── API ─────────────────────────────────────────────────────────────────────
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function stringValue(value: unknown, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function numberValue(value: unknown, fallback = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/[^\d.-]/g, ""));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function extractJson(text: string) {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
+  const candidate = fenced || text;
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error("The AI response did not include a JSON object.");
+  }
+
+  return candidate.slice(start, end + 1);
+}
+
+function parseRecipe(text: string): Recipe {
+  const parsed: unknown = JSON.parse(extractJson(text));
+
+  if (!isRecord(parsed)) {
+    throw new Error("The AI response was not a recipe object.");
+  }
+
+  const ingredients = Array.isArray(parsed.ingredients)
+    ? parsed.ingredients
+        .filter(isRecord)
+        .map((item) => ({
+          amount: stringValue(item.amount, "as needed"),
+          name: stringValue(item.name),
+        }))
+        .filter((item) => item.name)
+    : [];
+
+  const steps = Array.isArray(parsed.steps)
+    ? parsed.steps.map((step) => stringValue(step)).filter(Boolean)
+    : [];
+
+  const nutrition = isRecord(parsed.nutrition) ? parsed.nutrition : {};
+  const recipe: Recipe = {
+    name: stringValue(parsed.name),
+    cuisine: stringValue(parsed.cuisine, "Custom"),
+    description: stringValue(parsed.description),
+    time: stringValue(parsed.time, "Flexible"),
+    difficulty: stringValue(parsed.difficulty, "Intermediate"),
+    servings: Math.max(1, Math.round(numberValue(parsed.servings, 2))),
+    ingredients,
+    steps,
+    nutrition: {
+      calories: Math.max(0, Math.round(numberValue(nutrition.calories))),
+      protein: Math.max(0, Math.round(numberValue(nutrition.protein))),
+      carbs: Math.max(0, Math.round(numberValue(nutrition.carbs))),
+      fat: Math.max(0, Math.round(numberValue(nutrition.fat))),
+    },
+    tips: stringValue(parsed.tips),
+    emoji: stringValue(parsed.emoji),
+    calories: numberValue(parsed.calories),
+    rating: numberValue(parsed.rating),
+  };
+
+  if (!recipe.name || ingredients.length === 0 || steps.length === 0) {
+    throw new Error("The AI recipe was missing a name, ingredients, or steps.");
+  }
+
+  return recipe;
+}
+
 async function callClaude(prompt: string): Promise<Recipe> {
   const res = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      messages: [{ role: "user", content: prompt }]
-    })
+    body: JSON.stringify({ prompt })
   });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    const message = isRecord(errorBody) && typeof errorBody.error === "string"
+      ? errorBody.error
+      : `API error: ${res.status}`;
+    throw new Error(message);
+  }
   const data = await res.json();
   const text = (data.content as Array<{type:string;text?:string}>)
     ?.map(b => b.text || "").join("") || "";
-  const clean = text.replace(/```json|```/g, "").trim();
-  return JSON.parse(clean);
+  return parseRecipe(text);
+}
+
+function usePersistentState<T>(key: string, fallback: T) {
+  const [value, setValue] = useState<T>(() => {
+    if (typeof window === "undefined") return fallback;
+
+    try {
+      const stored = window.localStorage.getItem(key);
+      return stored ? JSON.parse(stored) as T : fallback;
+    } catch {
+      return fallback;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      // Storage may be unavailable in private mode or restricted browsers.
+    }
+  }, [key, value]);
+
+  return [value, setValue] as const;
 }
 
 function buildRecipePrompt(p: {ingredients:string[];cuisine:string;diet:string;time:string;skill:string;calories:string}) {
@@ -650,10 +773,27 @@ Respond ONLY with valid JSON, no markdown:
 {"name":"${card.name}","cuisine":"${card.cuisine}","description":"...","time":"${card.time}","difficulty":"${card.diff}","servings":2,"ingredients":[{"amount":"...","name":"..."}],"steps":["..."],"nutrition":{"calories":${card.calories},"protein":0,"carbs":0,"fat":0},"tips":"..."}`;
 }
 
+function buildMealPlan(savedRecipes: Recipe[], seed = Date.now()): MealPlan {
+  const savedNames = savedRecipes.map(recipe => recipe.name).filter(Boolean);
+  const lunchPool = [...savedNames, ...LUNCH_POOL, ...SAMPLE_RECIPES.map(recipe => recipe.name)];
+  const dinnerPool = [...SAMPLE_RECIPES.map(recipe => recipe.name), ...savedNames, ...DINNER_POOL];
+  const offset = Math.floor(seed / 1000) % 997;
+
+  return PLAN_DAYS.reduce<MealPlan>((plan, day, index) => ({
+    ...plan,
+    [day]: {
+      b: BREAKFAST_POOL[(index + offset) % BREAKFAST_POOL.length],
+      l: lunchPool[(index * 2 + offset) % lunchPool.length],
+      d: dinnerPool[(index * 3 + offset) % dinnerPool.length],
+      cal: 1650 + ((index * 83 + offset) % 500),
+    },
+  }), {});
+}
+
 // ─── Toast ───────────────────────────────────────────────────────────────────
 function Toast({ toasts }: { toasts: Array<{id:number;msg:string;icon:string}> }) {
   return (
-    <div className="toast-container">
+    <div className="toast-container" role="status" aria-live="polite" aria-atomic="true">
       {toasts.map(t => (
         <div key={t.id} className="toast">{t.icon} {t.msg}</div>
       ))}
@@ -662,15 +802,25 @@ function Toast({ toasts }: { toasts: Array<{id:number;msg:string;icon:string}> }
 }
 
 // ─── RecipeOutput ─────────────────────────────────────────────────────────────
-function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner }: {
+function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToast }: {
   recipe: Recipe; saved: boolean;
   onSave: () => void; onImprove: (i: string) => void;
-  onAddToPlanner?: (day: string, meal: "b"|"l"|"d") => void;
+  onAddToPlanner?: (day: string, meal: MealKey) => void;
+  onToast?: (msg: string, icon?: string) => void;
 }) {
   const [showPicker, setShowPicker] = useState(false);
   const [pickerDay, setPickerDay] = useState("Mon");
-  const [pickerMeal, setPickerMeal] = useState<"b"|"l"|"d">("d");
+  const [pickerMeal, setPickerMeal] = useState<MealKey>("d");
   const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const copyText = async (text: string, success: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      onToast?.(success, "✓");
+    } catch {
+      onToast?.("Copy failed", "!");
+    }
+  };
+
   return (
     <div className="recipe-output">
       <div className="recipe-header">
@@ -739,11 +889,11 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner }: {
           </button>
           <button className="btn-action" onClick={() => {
             const txt = `${recipe.name}\n\nIngredients:\n${recipe.ingredients?.map(i=>`${i.amount} ${i.name}`).join('\n')}\n\nSteps:\n${recipe.steps?.map((s,i)=>`${i+1}. ${s}`).join('\n')}`;
-            navigator.clipboard.writeText(txt);
+            copyText(txt, "Recipe copied");
           }}>↗ Copy</button>
           <button className="btn-action" onClick={() => {
             const list = `${recipe.name} — Grocery List\n\n${recipe.ingredients?.map(i=>`• ${i.amount} ${i.name}`).join('\n')}`;
-            navigator.clipboard.writeText(list);
+            copyText(list, "Grocery list copied");
           }}>🛒 Grocery List</button>
           <div style={{position:"relative"}}>
             <button className="btn-action" onClick={() => setShowPicker(p=>!p)}>📅 Add to Planner</button>
@@ -778,10 +928,11 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner }: {
 }
 
 // ─── GeneratorPage ────────────────────────────────────────────────────────────
-function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner }: {
+function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, onToast }: {
   onSave: (r:Recipe)=>void; savedIds: Set<string>;
   initialIngredients?: string[];
-  onAddToPlanner: (recipe: Recipe, day: string, meal: "b"|"l"|"d") => void;
+  onAddToPlanner: (recipe: Recipe, day: string, meal: MealKey) => void;
+  onToast: (msg: string, icon?: string) => void;
 }) {
   const [ingredients, setIngredients] = useState<string[]>(initialIngredients || []);
 
@@ -836,7 +987,7 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner }:
       <div className="gen-card">
         <div className="gen-card-title"><span style={{fontSize:"1.4rem"}}>◎</span> Your Ingredients</div>
         <div className="ingredient-input-row">
-          <input className="ingredient-input" placeholder="Add an ingredient (e.g. chicken, garlic…)"
+          <input className="ingredient-input" aria-label="Add an ingredient" placeholder="Add an ingredient (e.g. chicken, garlic…)"
             value={input} onChange={e=>setInput(e.target.value)}
             onKeyDown={e=>e.key==="Enter"&&addIngredient()} />
           <button className="btn-add" onClick={addIngredient}>+ Add</button>
@@ -855,18 +1006,18 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner }:
           {ingredients.map(ing=>(
             <span key={ing} className="chip">
               {ing}
-              <button className="chip-x" onClick={()=>setIngredients(p=>p.filter(i=>i!==ing))}>×</button>
+              <button className="chip-x" aria-label={`Remove ${ing}`} onClick={()=>setIngredients(p=>p.filter(i=>i!==ing))}>×</button>
             </span>
           ))}
         </div>
         <div style={{borderTop:"1px solid var(--border)",paddingTop:"1.25rem",marginBottom:"1.25rem"}}>
           <div style={{fontSize:"0.65rem",fontFamily:"Space Mono,monospace",textTransform:"uppercase",letterSpacing:"0.08em",color:"var(--smoke)",marginBottom:"0.75rem"}}>Preferences</div>
           <div className="filter-row">
-            <select className="select-field" value={cuisine} onChange={e=>setCuisine(e.target.value)}>{CUISINES.map(c=><option key={c}>{c}</option>)}</select>
-            <select className="select-field" value={diet} onChange={e=>setDiet(e.target.value)}>{DIETS.map(d=><option key={d}>{d}</option>)}</select>
-            <select className="select-field" value={time} onChange={e=>setTime(e.target.value)}>{TIMES.map(t=><option key={t}>{t}</option>)}</select>
-            <select className="select-field" value={skill} onChange={e=>setSkill(e.target.value)}>{SKILLS.map(s=><option key={s}>{s}</option>)}</select>
-            <select className="select-field" value={calories} onChange={e=>setCalories(e.target.value)}>{CALORIE_OPTIONS.map(c=><option key={c}>{c}</option>)}</select>
+            <select className="select-field" aria-label="Cuisine preference" value={cuisine} onChange={e=>setCuisine(e.target.value)}>{CUISINES.map(c=><option key={c}>{c}</option>)}</select>
+            <select className="select-field" aria-label="Diet preference" value={diet} onChange={e=>setDiet(e.target.value)}>{DIETS.map(d=><option key={d}>{d}</option>)}</select>
+            <select className="select-field" aria-label="Cooking time preference" value={time} onChange={e=>setTime(e.target.value)}>{TIMES.map(t=><option key={t}>{t}</option>)}</select>
+            <select className="select-field" aria-label="Skill level preference" value={skill} onChange={e=>setSkill(e.target.value)}>{SKILLS.map(s=><option key={s}>{s}</option>)}</select>
+            <select className="select-field" aria-label="Calorie preference" value={calories} onChange={e=>setCalories(e.target.value)}>{CALORIE_OPTIONS.map(c=><option key={c}>{c}</option>)}</select>
           </div>
         </div>
         <button className="btn-generate" onClick={generate} disabled={loading||improving}>
@@ -884,7 +1035,7 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner }:
         </div>
       )}
       {recipe && !loading && (
-        <RecipeOutput recipe={recipe} saved={savedIds.has(recipe.name)} onSave={()=>onSave(recipe)} onImprove={improve} onAddToPlanner={(day,meal)=>onAddToPlanner(recipe,day,meal)}/>
+        <RecipeOutput recipe={recipe} saved={savedIds.has(recipe.name)} onSave={()=>onSave(recipe)} onImprove={improve} onAddToPlanner={(day,meal)=>onAddToPlanner(recipe,day,meal)} onToast={onToast}/>
       )}
     </div>
   );
@@ -893,9 +1044,10 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner }:
 // ─── DiscoverPage ─────────────────────────────────────────────────────────────
 type SampleRecipe = typeof SAMPLE_RECIPES[0];
 
-function DiscoverPage({ onSave, savedIds, onAddToPlanner }: {
+function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
   onSave:(r:Recipe)=>void; savedIds:Set<string>;
-  onAddToPlanner: (recipe: Recipe, day: string, meal: "b"|"l"|"d") => void;
+  onAddToPlanner: (recipe: Recipe, day: string, meal: MealKey) => void;
+  onToast: (msg: string, icon?: string) => void;
 }) {
   const [filter, setFilter] = useState("All");
   const [activeCard, setActiveCard] = useState<SampleRecipe|null>(null);
@@ -904,8 +1056,23 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner }: {
   const [improving, setImproving] = useState(false);
   const [error, setError] = useState<string|null>(null);
 
-  const filters = ["All","Italian","Japanese","Mexican","Indian","Mediterranean","Thai","Korean","French"];
+  const filters = ["All", ...Array.from(new Set(SAMPLE_RECIPES.map(r=>r.cuisine)))];
   const shown = filter==="All" ? SAMPLE_RECIPES : SAMPLE_RECIPES.filter(r=>r.cuisine===filter);
+
+  useEffect(() => {
+    if (!activeCard) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setActiveCard(null);
+        setGeneratedRecipe(null);
+        setError(null);
+      }
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [activeCard]);
 
   const openCard = async (card: SampleRecipe) => {
     setActiveCard(card);
@@ -945,7 +1112,7 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner }: {
         </div>
         <div className="recipe-grid">
           {shown.map(r=>(
-            <div key={r.id} className="recipe-card" onClick={()=>openCard(r)}>
+            <button key={r.id} type="button" className="recipe-card" onClick={()=>openCard(r)}>
               <div className="recipe-card-img">
                 <span style={{position:"relative",zIndex:1}}>{r.emoji}</span>
                 <div className="recipe-card-img-overlay"/>
@@ -960,15 +1127,15 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner }: {
                 </div>
                 <div className="recipe-card-hint">✦ View full recipe →</div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </div>
 
       {activeCard && (
         <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-inner" onClick={e=>e.stopPropagation()}>
-            <button className="modal-close" onClick={closeModal}>✕</button>
+          <div className="modal-inner" role="dialog" aria-modal="true" aria-label={activeCard.name} onClick={e=>e.stopPropagation()}>
+            <button className="modal-close" aria-label="Close recipe dialog" onClick={closeModal}>✕</button>
 
             {loading && (
               <div className="modal-loading-card">
@@ -1003,6 +1170,7 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner }: {
                   onSave={()=>onSave(generatedRecipe)}
                   onImprove={improve}
                   onAddToPlanner={(day,meal)=>onAddToPlanner(generatedRecipe,day,meal)}
+                  onToast={onToast}
                 />
               </div>
             )}
@@ -1023,7 +1191,7 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
   const [editingIdx, setEditingIdx] = useState<number|null>(null);
   const [editName, setEditName] = useState("");
   const [editQty, setEditQty] = useState("");
-  const [editStatus, setEditStatus] = useState("ok");
+  const [editStatus, setEditStatus] = useState<PantryStatus>("ok");
 
   const add = () => {
     if (newItem.trim()) { setItems(p=>[...p,{name:newItem.trim(),qty:"1 unit",status:"ok"}]); setNewItem(""); }
@@ -1045,7 +1213,7 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
           <div className="discover-title">Your <em style={{fontFamily:"Cormorant Garamond,serif",fontStyle:"italic",color:"var(--terra)"}}>pantry</em></div>
         </div>
         <div style={{display:"flex",gap:"0.5rem",marginBottom:"1.5rem"}}>
-          <input className="ingredient-input" placeholder="Add ingredient to pantry…" value={newItem} onChange={e=>setNewItem(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}/>
+          <input className="ingredient-input" aria-label="Add ingredient to pantry" placeholder="Add ingredient to pantry…" value={newItem} onChange={e=>setNewItem(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}/>
           <button className="btn-add" onClick={add}>+ Add</button>
         </div>
         <div className="pantry-grid">
@@ -1055,9 +1223,9 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
               <div key={i} className="pantry-item">
                 {editingIdx===i ? (
                   <div className="pantry-item-edit">
-                    <input className="ingredient-input" style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem"}} value={editName} onChange={e=>setEditName(e.target.value)}/>
+                    <input className="ingredient-input" aria-label="Ingredient name" style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem"}} value={editName} onChange={e=>setEditName(e.target.value)}/>
                     <div className="pantry-item-controls">
-                      <input className="ingredient-input" style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem",width:"90px"}} value={editQty} onChange={e=>setEditQty(e.target.value)} placeholder="qty"/>
+                      <input className="ingredient-input" aria-label="Ingredient quantity" style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem",width:"90px"}} value={editQty} onChange={e=>setEditQty(e.target.value)} placeholder="qty"/>
                       <button className={`pantry-status-toggle ${editStatus}`} onClick={()=>setEditStatus(s=>s==="ok"?"low":"ok")}>
                         {editStatus==="ok"?"In Stock":"Low"}
                       </button>
@@ -1109,7 +1277,7 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
 }
 
 // ─── PlannerPage ──────────────────────────────────────────────────────────────
-function PlannerPage({ mealPlan }: { mealPlan: typeof MEAL_PLAN }) {
+function PlannerPage({ mealPlan, onRegenerate }: { mealPlan: MealPlan; onRegenerate: () => void }) {
   const days = Object.keys(mealPlan);
   return (
     <div className="page">
@@ -1125,7 +1293,7 @@ function PlannerPage({ mealPlan }: { mealPlan: typeof MEAL_PLAN }) {
               <div style={{fontFamily:"Cormorant Garamond,serif",fontSize:"1.3rem",fontWeight:600,color:"var(--bark)"}}>{val}</div>
             </div>
           ))}
-          <button style={{padding:"0.75rem 1.25rem",borderRadius:"12px",background:"var(--terra)",color:"white",border:"none",cursor:"pointer",fontFamily:"DM Sans,sans-serif",fontSize:"0.9rem",fontWeight:500,marginLeft:"auto"}}>✦ Regenerate Plan</button>
+          <button onClick={onRegenerate} style={{padding:"0.75rem 1.25rem",borderRadius:"12px",background:"var(--terra)",color:"white",border:"none",cursor:"pointer",fontFamily:"DM Sans,sans-serif",fontSize:"0.9rem",fontWeight:500,marginLeft:"auto"}}>✦ Regenerate Plan</button>
         </div>
         <div className="planner-grid">
           {days.map(day=>(
@@ -1192,11 +1360,11 @@ function SavedPage({ saved, onRemove }: { saved:Recipe[]; onRemove:(r:Recipe)=>v
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function RecipePlatform() {
   const [tab, setTab] = useState("generate");
-  const [saved, setSaved] = useState<Recipe[]>([]);
+  const [saved, setSaved] = usePersistentState<Recipe[]>(STORAGE_KEYS.saved, []);
   const [toasts, setToasts] = useState<Array<{id:number;msg:string;icon:string}>>([]);
-  const [pantryItems, setPantryItems] = useState<PantryItem[]>(PANTRY_ITEMS);
+  const [pantryItems, setPantryItems] = usePersistentState<PantryItem[]>(STORAGE_KEYS.pantry, PANTRY_ITEMS);
   const [pendingIngredients, setPendingIngredients] = useState<string[]>([]);
-  const [mealPlan, setMealPlan] = useState(MEAL_PLAN);
+  const [mealPlan, setMealPlan] = usePersistentState<MealPlan>(STORAGE_KEYS.mealPlan, MEAL_PLAN);
   const toastRef = useRef(0);
 
   const addToast = (msg: string, icon = "✓") => {
@@ -1215,10 +1383,15 @@ export default function RecipePlatform() {
     }
   };
 
-  const handleAddToPlanner = (recipe: Recipe, day: string, meal: "b"|"l"|"d") => {
+  const handleAddToPlanner = (recipe: Recipe, day: string, meal: MealKey) => {
     setMealPlan(p=>({...p, [day]:{...p[day],[meal]:recipe.name}}));
     const label = meal==="b"?"Breakfast":meal==="l"?"Lunch":"Dinner";
     addToast(`Added to ${day} ${label}`, "📅");
+  };
+
+  const handleRegeneratePlan = () => {
+    setMealPlan(buildMealPlan(saved));
+    addToast("Meal plan regenerated", "✦");
   };
 
   const savedIds = new Set(saved.map(r=>r.name));
@@ -1227,20 +1400,20 @@ export default function RecipePlatform() {
     <>
       <style>{FONTS}{CSS}</style>
       <div className="app">
-        <nav className="nav">
+        <nav className="nav" aria-label="Primary">
           <div className="nav-logo"><span style={{fontSize:"1.2rem"}}>◈</span> Culinari<span>a</span></div>
-          <div className="nav-tabs">
+          <div className="nav-tabs" role="tablist" aria-label="Culina sections">
             {[{id:"generate",label:"Generate"},{id:"discover",label:"Discover"},{id:"pantry",label:"Pantry"},{id:"planner",label:"Planner"},{id:"saved",label:"Saved",badge:saved.length||null}].map(t=>(
-              <button key={t.id} className={`nav-tab${tab===t.id?" active":""}`} onClick={()=>setTab(t.id)}>
+              <button key={t.id} role="tab" aria-selected={tab===t.id} className={`nav-tab${tab===t.id?" active":""}`} onClick={()=>setTab(t.id)}>
                 {t.label}{t.badge?<span className="nav-badge">{t.badge}</span>:null}
               </button>
             ))}
           </div>
         </nav>
-        {tab==="generate" && <GeneratorPage onSave={handleSave} savedIds={savedIds} initialIngredients={pendingIngredients} onAddToPlanner={handleAddToPlanner}/>}
-        {tab==="discover" && <DiscoverPage onSave={handleSave} savedIds={savedIds} onAddToPlanner={handleAddToPlanner}/>}
+        {tab==="generate" && <GeneratorPage onSave={handleSave} savedIds={savedIds} initialIngredients={pendingIngredients} onAddToPlanner={handleAddToPlanner} onToast={addToast}/>}
+        {tab==="discover" && <DiscoverPage onSave={handleSave} savedIds={savedIds} onAddToPlanner={handleAddToPlanner} onToast={addToast}/>}
         {tab==="pantry" && <PantryPage items={pantryItems} setItems={setPantryItems} onGenerateFromPantry={()=>{setPendingIngredients(pantryItems.map(i=>i.name));setTab("generate");}}/>}
-        {tab==="planner" && <PlannerPage mealPlan={mealPlan}/>}
+        {tab==="planner" && <PlannerPage mealPlan={mealPlan} onRegenerate={handleRegeneratePlan}/>}
         {tab==="saved" && <SavedPage saved={saved} onRemove={handleSave}/>}
         <Toast toasts={toasts}/>
       </div>
