@@ -1,6 +1,6 @@
 "use client";
 
-// Culinaria — overhauled: multi-select dietary needs, textures, expanded cuisines, cook mode, scaling, surprise.
+// Culinaria: multi-select dietary needs, textures, expanded cuisines, cook mode, scaling, and surprise.
 import { useState, useRef, useEffect } from "react";
 
 // ─── Design System ─────────────────────────────────────────────────────────
@@ -25,17 +25,44 @@ const CSS = `
     --border: rgba(44,24,16,0.12);
     --shadow: 0 4px 24px rgba(44,24,16,0.10);
     --shadow-lg: 0 12px 48px rgba(44,24,16,0.16);
+    --focus: oklch(0.66 0.16 42);
+    --error: oklch(0.56 0.18 31);
+    --error-bg: oklch(0.96 0.03 31);
+    --error-border: oklch(0.86 0.08 31);
   }
 
   body {
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'DM Sans', system-ui, sans-serif;
     background: var(--cream);
     color: var(--bark);
     line-height: 1.6;
     min-height: 100vh;
   }
 
+  button, input, select, textarea { font: inherit; }
+  button { touch-action: manipulation; }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 3px;
+  }
+
   .app { min-height: 100vh; }
+  .skip-link {
+    position: fixed; top: 0.5rem; left: 0.5rem; z-index: 1000;
+    padding: 0.65rem 1rem; border-radius: 8px;
+    background: var(--bark); color: var(--cream);
+    transform: translateY(-150%);
+    transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .skip-link:focus { transform: translateY(0); }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
 
   .nav {
     position: fixed; top: 0; left: 0; right: 0; z-index: 100;
@@ -51,8 +78,9 @@ const CSS = `
     font-size: 1.6rem; font-weight: 600;
     color: var(--bark); letter-spacing: -0.02em;
     display: flex; align-items: center; gap: 0.5rem;
+    white-space: nowrap;
   }
-  .nav-logo span { color: var(--terra); }
+  .nav-logo-mark, .nav-logo-accent { color: var(--terra); }
   .nav-tabs { display: flex; gap: 0.25rem; }
   .nav-tab {
     padding: 0.4rem 1rem; border-radius: 100px;
@@ -63,6 +91,7 @@ const CSS = `
   }
   .nav-tab:hover { background: var(--warm-white); color: var(--bark); }
   .nav-tab.active { background: var(--bark); color: var(--cream); }
+  .nav-tab:focus-visible { outline-offset: 2px; }
   .nav-badge {
     background: var(--terra); color: white;
     font-size: 0.65rem; padding: 1px 6px;
@@ -118,6 +147,7 @@ const CSS = `
   .ingredient-input-row { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
   .ingredient-input {
     flex: 1; padding: 0.65rem 1rem;
+    min-width: 0; min-height: 44px;
     border: 1.5px solid var(--border); border-radius: 10px;
     font-family: 'DM Sans', sans-serif; font-size: 0.9rem;
     background: var(--cream); color: var(--bark);
@@ -127,12 +157,24 @@ const CSS = `
   .ingredient-input::placeholder { color: var(--ash); }
   .btn-add {
     padding: 0.65rem 1.25rem; border-radius: 10px;
+    min-height: 44px;
     background: var(--terra); color: white;
     border: none; cursor: pointer; font-weight: 500;
     font-family: 'DM Sans', sans-serif; font-size: 0.9rem;
     transition: all 0.2s; white-space: nowrap;
   }
   .btn-add:hover { background: #b5541f; transform: translateY(-1px); }
+  .quick-add {
+    min-height: 34px; padding: 0.25rem 0.7rem;
+    border: 1px solid var(--border); border-radius: 100px;
+    background: transparent; color: var(--smoke);
+    font-size: 0.78rem; cursor: pointer;
+    margin: 0 0.35rem 0.35rem 0;
+  }
+  .quick-add:hover { border-color: var(--terra); color: var(--bark); }
+  .quick-add[aria-pressed="true"] {
+    background: var(--warm-white); border-color: var(--terra); color: var(--bark);
+  }
 
   .chip-list { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.5rem; min-height: 2rem; }
   .chip {
@@ -146,13 +188,15 @@ const CSS = `
   .chip-x {
     background: none; border: none; cursor: pointer;
     color: var(--smoke); font-size: 1rem; line-height: 1;
-    padding: 0; display: flex; align-items: center;
+    width: 28px; height: 28px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
   }
   .chip-x:hover { color: var(--terra); }
 
   .filter-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px,1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
   .select-field {
     padding: 0.6rem 0.9rem; border-radius: 10px;
+    min-height: 44px;
     border: 1.5px solid var(--border); background: var(--cream);
     font-family: 'DM Sans', sans-serif; font-size: 0.85rem;
     color: var(--bark); cursor: pointer; outline: none;
@@ -231,6 +275,19 @@ const CSS = `
     color: var(--bark); margin-bottom: 1rem;
     padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);
     display: flex; align-items: center; gap: 0.5rem;
+  }
+  .recipe-section-heading { font: inherit; }
+  .recipe-tip {
+    margin-top: 1.25rem; padding: 0.8rem 1rem;
+    background: var(--warm-white); border-radius: 10px;
+    border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+    font-size: 0.82rem; color: var(--smoke);
+  }
+  .recipe-tip-label {
+    display: block; margin-bottom: 0.25rem;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.1em; color: var(--gold);
   }
 
   .ingredient-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
@@ -343,7 +400,11 @@ const CSS = `
     appearance: none; width: 100%; text-align: left;
     font-family: inherit; color: inherit;
   }
-  .recipe-card:hover, .recipe-card:focus-visible { transform: translateY(-4px); box-shadow: var(--shadow-lg); outline: none; }
+  .recipe-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+  .recipe-card:focus-visible {
+    transform: translateY(-4px); box-shadow: var(--shadow-lg);
+    outline: 3px solid var(--focus); outline-offset: 3px;
+  }
   .recipe-card-img {
     width: 100%; height: 180px; object-fit: cover;
     background: linear-gradient(135deg, var(--warm-white), var(--ash));
@@ -450,10 +511,6 @@ const CSS = `
   }
   @keyframes toastIn { from { transform: translateX(20px); opacity:0; } to { transform:translateX(0); opacity:1; } }
 
-  ::-webkit-scrollbar { width: 6px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--ash); border-radius: 3px; }
-
   .modal-overlay {
     position: fixed; inset: 0; z-index: 300;
     background: rgba(44,24,16,0.55); backdrop-filter: blur(6px);
@@ -466,7 +523,7 @@ const CSS = `
   .modal-close {
     position: fixed; top: 1.25rem; right: 1.25rem; z-index: 301;
     background: var(--surface); border: 1.5px solid var(--border);
-    border-radius: 50%; width: 40px; height: 40px;
+    border-radius: 50%; width: 44px; height: 44px;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; font-size: 1.1rem; color: var(--bark);
     box-shadow: var(--shadow); transition: all 0.2s;
@@ -526,6 +583,7 @@ const CSS = `
   .pantry-item-actions { display: flex; align-items: center; gap: 0.4rem; }
   .pantry-icon-btn {
     background: none; border: none; cursor: pointer; padding: 0.15rem 0.35rem;
+    min-width: 32px; min-height: 32px;
     font-size: 0.9rem; border-radius: 6px; transition: all 0.15s; line-height: 1;
   }
   .pantry-icon-btn.edit { color: var(--smoke); }
@@ -548,18 +606,10 @@ const CSS = `
     border: 1px solid var(--border); cursor: pointer; font-size: 0.78rem;
   }
 
-  /* ── Responsive nav ── */
-  @media (max-width: 640px) {
-    .nav { padding: 0 1rem; }
-    .nav-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-    .nav-tabs::-webkit-scrollbar { display: none; }
-    .nav-tab { white-space: nowrap; }
-  }
-
   /* ── Dietary needs panel ── */
   .diet-panel-toggle {
     width: 100%; display: flex; justify-content: space-between; align-items: center;
-    background: none; border: none; cursor: pointer; padding: 0;
+    min-height: 44px; background: none; border: none; cursor: pointer; padding: 0;
     font-family: 'DM Sans', sans-serif;
   }
   .diet-panel-toggle:hover .diet-panel-arrow { color: var(--terra); }
@@ -584,6 +634,10 @@ const CSS = `
     margin-top: 0.75rem; font-size: 0.78rem; color: var(--sage);
     font-family: 'Space Mono', monospace; letter-spacing: 0.02em;
   }
+  .diet-disclaimer {
+    font-size: 0.78rem; line-height: 1.55; color: var(--smoke);
+    max-width: 68ch;
+  }
 
   /* ── Generate row + surprise ── */
   .generate-row { display: flex; gap: 0.75rem; }
@@ -602,7 +656,7 @@ const CSS = `
   /* ── Serving stepper ── */
   .serving-stepper { display: inline-flex; align-items: center; gap: 0.4rem; }
   .serving-btn {
-    width: 22px; height: 22px; border-radius: 50%;
+    width: 36px; height: 36px; min-width: 36px; border-radius: 50%;
     border: 1px solid rgba(250,247,242,0.35); background: rgba(250,247,242,0.1);
     color: var(--cream); cursor: pointer; font-size: 0.9rem; line-height: 1;
     display: inline-flex; align-items: center; justify-content: center;
@@ -650,6 +704,10 @@ const CSS = `
     font-size: 0.7rem; color: white; margin-top: 2px; transition: all 0.15s;
   }
   .check-box.on { background: var(--sage); border-color: var(--sage); }
+  .ingredient-item.checkable:focus-visible,
+  .step-item.checkable:focus-visible {
+    outline: 3px solid var(--focus); outline-offset: 3px;
+  }
 
   /* ── Discover diet tags ── */
   .recipe-card-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.5rem; }
@@ -659,6 +717,80 @@ const CSS = `
     padding: 0.15rem 0.5rem; border-radius: 100px;
     background: var(--warm-white); color: var(--sage);
     border: 1px solid var(--border);
+  }
+
+  .error-message {
+    margin-top: 1rem; padding: 0.75rem 1rem;
+    background: var(--error-bg); border: 1px solid var(--error-border);
+    border-radius: 10px; font-size: 0.85rem; color: var(--error);
+  }
+  .saved-card { cursor: default; }
+
+  @media (max-width: 640px) {
+    .nav {
+      height: auto; min-height: 104px; padding: 0.45rem 0.75rem 0.5rem;
+      flex-wrap: wrap; align-content: center; gap: 0.25rem;
+    }
+    .nav-logo { width: 100%; justify-content: center; font-size: 1.35rem; line-height: 1.1; }
+    .nav-tabs {
+      width: 100%; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.15rem; overflow: visible;
+    }
+    .nav-tab {
+      min-width: 0; min-height: 44px; padding: 0.4rem 0.15rem;
+      font-size: 0.72rem; white-space: nowrap;
+    }
+    .page { padding-top: 120px; }
+    .hero { padding: 2.5rem 1.25rem 2rem; }
+    .hero-title { font-size: 2.85rem; }
+    .hero-sub { font-size: 1rem; margin-bottom: 1rem; }
+    .gen-card {
+      margin: 0 0.75rem 2rem; padding: 1.25rem;
+      border-radius: 16px;
+    }
+    .quick-add,
+    .filter-chip,
+    .diet-chip,
+    .improve-chip,
+    .btn-action,
+    .cook-mode-toggle,
+    .picker-chip,
+    .btn-picker-confirm,
+    .pantry-status-toggle,
+    .pantry-edit-save,
+    .pantry-edit-cancel,
+    .pantry-icon-btn {
+      min-height: 44px;
+    }
+    .quick-add { padding-inline: 0.8rem; }
+    .chip-x, .serving-btn, .pantry-icon-btn {
+      width: 44px; height: 44px; min-width: 44px;
+    }
+    .select-field { font-size: 0.9rem; }
+    .discover-page, .pantry-page, .planner-page, .saved-page { padding: 1.5rem 1rem; }
+    .recipe-header, .recipe-body { padding: 1.25rem; }
+    .recipe-meta { gap: 1.25rem; }
+    .nutrition-grid { grid-template-columns: repeat(2, 1fr); }
+    .filter-bar { padding: 0.85rem; }
+    .toast-container { left: 1rem; right: 1rem; bottom: 1rem; }
+    .toast { width: 100%; justify-content: center; }
+    .planner-picker-panel { position: fixed; left: 1rem; right: 1rem; top: auto; bottom: 1rem; min-width: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  @media (forced-colors: active) {
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible { outline: 3px solid Highlight; }
   }
 `;
 
@@ -860,72 +992,56 @@ async function callClaude(prompt: string): Promise<Recipe> {
   const text = (data.content as Array<{type:string;text?:string}>)
     ?.map(b => b.text || "").join("") || "";
   return parseRecipe(text);
-<<<<<<< HEAD
-}
-
-function usePersistentState<T>(key: string, fallback: T) {
-  const [value, setValue] = useState<T>(() => {
-    if (typeof window === "undefined") return fallback;
-
-    try {
-      const stored = window.localStorage.getItem(key);
-      return stored ? JSON.parse(stored) as T : fallback;
-    } catch {
-      return fallback;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // Storage may be unavailable in private mode or restricted browsers.
-    }
-  }, [key, value]);
-
-  return [value, setValue] as const;
-=======
->>>>>>> 1e6988393620be5a83cceb186bf79e4dd1ae8f98
 }
 
 function usePersistentState<T>(key: string, fallback: T) {
   // Server and first client render both use `fallback` so SSR hydration matches;
   // stored data is loaded after mount, then changes are persisted.
-  const [value, setValue] = useState<T>(fallback);
-  const hydratedRef = useRef(false);
+  const fallbackRef = useRef(fallback);
+  const [value, setValue] = useState<T>(fallbackRef.current);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(key);
-      if (stored) setValue(JSON.parse(stored) as T);
+      if (stored) {
+        const parsed: unknown = JSON.parse(stored);
+        const baseline = fallbackRef.current;
+        const compatible = Array.isArray(baseline)
+          ? Array.isArray(parsed)
+          : typeof baseline === "object" && baseline !== null
+            ? isRecord(parsed)
+            : typeof parsed === typeof baseline;
+
+        if (compatible) setValue(parsed as T);
+      }
     } catch {
       // Storage may be unavailable in private mode or restricted browsers.
+    } finally {
+      setHydrated(true);
     }
   }, [key]);
 
   useEffect(() => {
-    if (!hydratedRef.current) {
-      hydratedRef.current = true;
-      return;
-    }
+    if (!hydrated) return;
     try {
       window.localStorage.setItem(key, JSON.stringify(value));
     } catch {
       // Storage may be unavailable in private mode or restricted browsers.
     }
-  }, [key, value]);
+  }, [hydrated, key, value]);
 
   return [value, setValue] as const;
 }
 
 function textureInstruction(texture: string) {
   if (!texture || texture === "Any Texture" || texture === "Regular") return "";
-  const base = `Texture requirement: ${texture}. CRITICAL: do NOT default to soup. Offer variety — casseroles, braises, egg dishes, flaky fish, slow-cooked stews, soft grain bowls, polenta, risotto, well-cooked legumes, soft desserts. `;
+  const base = `Texture requirement: ${texture}. CRITICAL: do NOT default to soup. Offer varied casseroles, braises, egg dishes, flaky fish, slow-cooked stews, soft grain bowls, polenta, risotto, well-cooked legumes, and soft desserts. `;
   const detail: Record<string, string> = {
     "Soft Foods (easy-chew)": "Everything must be tender and easy to chew with no hard, crunchy, tough, or stringy elements. A fork should cut every component.",
     "Minced & Moist": "All components finely minced (≤4mm pieces) and served moist with sauce or gravy. No hard lumps or dry textures.",
     "Puréed": "Every component must be smooth-puréed with no lumps. Purée components separately to preserve distinct flavors and colors; suggest plating that keeps them appetizing.",
-    "Smooth / Liquid": "Fully smooth, drinkable or spoonable consistency throughout. Think savory blends, smoothies, enriched creams — strained where needed.",
+    "Smooth / Liquid": "Fully smooth, drinkable or spoonable consistency throughout. Think savory blends, smoothies, and enriched creams, strained where needed.",
   };
   return base + (detail[texture] || "");
 }
@@ -946,6 +1062,7 @@ Skill: ${p.skill || "intermediate"}
 Calories: ${p.calories || "flexible"}
 
 If dietary requirements conflict with an ingredient, substitute it appropriately and mention the swap in tips.
+For allergies or medical diets, avoid claims that the recipe is medically safe. Remind the user in tips to verify packaged ingredients and cross-contamination risks when relevant.
 
 Respond ONLY with valid JSON, no markdown:
 {"name":"...","cuisine":"...","description":"...","time":"...","difficulty":"Easy|Intermediate|Advanced","servings":2,"ingredients":[{"amount":"...","name":"..."}],"steps":["..."],"nutrition":{"calories":0,"protein":0,"carbs":0,"fat":0},"tips":"..."}`;
@@ -959,7 +1076,7 @@ Instruction: "${instruction}"`;
 }
 
 function buildDiscoverPrompt(card: { name:string; cuisine:string; time:string; calories:number; diff:string }) {
-  return `You are a world-class chef AI. Generate the complete, authentic recipe for "${card.name}" — a ${card.cuisine} dish.
+  return `You are a world-class chef AI. Generate the complete, authentic recipe for "${card.name}", a ${card.cuisine} dish.
 
 Target: ~${card.calories} cal, ${card.time} cook time, ${card.diff} difficulty.
 
@@ -984,8 +1101,6 @@ function buildMealPlan(savedRecipes: Recipe[], seed = Date.now()): MealPlan {
   }), {});
 }
 
-<<<<<<< HEAD
-=======
 // ─── Serving scaler ──────────────────────────────────────────────────────────
 const UNICODE_FRACTIONS: Record<string, number> = { "¼":0.25, "½":0.5, "¾":0.75, "⅓":1/3, "⅔":2/3, "⅛":0.125, "⅜":0.375, "⅝":0.625, "⅞":0.875 };
 
@@ -1034,7 +1149,6 @@ function scaleAmount(amount: string, factor: number): string {
   return `${formatQuantity(parsed.value * factor)}${parsed.rest ? " " + parsed.rest : ""}`.trim();
 }
 
->>>>>>> 1e6988393620be5a83cceb186bf79e4dd1ae8f98
 // ─── Toast ───────────────────────────────────────────────────────────────────
 function Toast({ toasts }: { toasts: Array<{id:number;msg:string;icon:string}> }) {
   return (
@@ -1044,6 +1158,28 @@ function Toast({ toasts }: { toasts: Array<{id:number;msg:string;icon:string}> }
       ))}
     </div>
   );
+}
+
+function trapDialogFocus(event: React.KeyboardEvent<HTMLDivElement>) {
+  if (event.key !== "Tab") return;
+
+  const focusable = Array.from(
+    event.currentTarget.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+    )
+  ).filter(element => !element.hasAttribute("hidden"));
+
+  if (focusable.length === 0) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 // ─── RecipeOutput ─────────────────────────────────────────────────────────────
@@ -1056,9 +1192,6 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
   const [showPicker, setShowPicker] = useState(false);
   const [pickerDay, setPickerDay] = useState("Mon");
   const [pickerMeal, setPickerMeal] = useState<MealKey>("d");
-<<<<<<< HEAD
-  const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-=======
   const [cookMode, setCookMode] = useState(false);
   const [checkedIng, setCheckedIng] = useState<Set<number>>(new Set());
   const [checkedSteps, setCheckedSteps] = useState<Set<number>>(new Set());
@@ -1080,7 +1213,6 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
   };
   const stepProgress = recipe.steps?.length ? Math.round((checkedSteps.size / recipe.steps.length) * 100) : 0;
 
->>>>>>> 1e6988393620be5a83cceb186bf79e4dd1ae8f98
   const copyText = async (text: string, success: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -1091,11 +1223,11 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
   };
 
   return (
-    <div className="recipe-output">
+    <article className="recipe-output" aria-labelledby="generated-recipe-title">
       <div className="recipe-header">
         <div className="recipe-cuisine-tag">✦ {recipe.cuisine}</div>
-        <div className="recipe-name">{recipe.name}</div>
-        <div className="recipe-desc">{recipe.description}</div>
+        <h2 id="generated-recipe-title" className="recipe-name">{recipe.name}</h2>
+        <p className="recipe-desc">{recipe.description}</p>
         <div className="recipe-meta">
           {[["Time", `⏱ ${recipe.time}`],["Difficulty",`◆ ${recipe.difficulty}`],["Calories / serving",`🔥 ${recipe.nutrition?.calories}`]].map(([label,val])=>(
             <div key={label} className="recipe-meta-item">
@@ -1106,9 +1238,9 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
           <div className="recipe-meta-item">
             <span className="recipe-meta-label">Servings</span>
             <span className="serving-stepper">
-              <button className="serving-btn" aria-label="Decrease servings" onClick={()=>setServings(s=>Math.max(1,s-1))}>−</button>
-              <span className="recipe-meta-val serving-count">◎ {servings}</span>
-              <button className="serving-btn" aria-label="Increase servings" onClick={()=>setServings(s=>Math.min(24,s+1))}>+</button>
+              <button type="button" className="serving-btn" aria-label="Decrease servings" disabled={servings <= 1} onClick={()=>setServings(s=>Math.max(1,s-1))}>−</button>
+              <span className="recipe-meta-val serving-count" aria-live="polite">◎ {servings}</span>
+              <button type="button" className="serving-btn" aria-label="Increase servings" disabled={servings >= 24} onClick={()=>setServings(s=>Math.min(24,s+1))}>+</button>
             </span>
             {factor !== 1 && <span className="serving-note">amounts ×{Math.round(factor*100)/100}</span>}
           </div>
@@ -1116,11 +1248,20 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
       </div>
       <div className="recipe-body">
         <div>
-          <div className="recipe-section-title">◎ Ingredients</div>
+          <h3 className="recipe-section-title">◎ Ingredients</h3>
           <ul className="ingredient-list">
             {recipe.ingredients?.map((ing, i) => (
               <li key={i} className={`ingredient-item${cookMode?" checkable":""}${cookMode&&checkedIng.has(i)?" checked":""}`}
-                onClick={cookMode ? ()=>setCheckedIng(s=>toggleSet(s,i)) : undefined}>
+                role={cookMode ? "checkbox" : undefined}
+                aria-checked={cookMode ? checkedIng.has(i) : undefined}
+                tabIndex={cookMode ? 0 : undefined}
+                onClick={cookMode ? ()=>setCheckedIng(s=>toggleSet(s,i)) : undefined}
+                onKeyDown={cookMode ? event => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setCheckedIng(s=>toggleSet(s,i));
+                  }
+                } : undefined}>
                 {cookMode && <span className={`check-box${checkedIng.has(i)?" on":""}`}>{checkedIng.has(i)?"✓":""}</span>}
                 <span className="ingredient-amount">{scaleAmount(ing.amount, factor)}</span>
                 <span>{ing.name}</span>
@@ -1128,29 +1269,40 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
             ))}
           </ul>
           {recipe.tips && (
-            <div style={{marginTop:"1.25rem",padding:"0.75rem 1rem",background:"var(--warm-white)",borderRadius:"10px",fontSize:"0.82rem",color:"var(--smoke)",borderLeft:"3px solid var(--gold)"}}>
-              <strong style={{fontFamily:"Space Mono,monospace",fontSize:"0.65rem",textTransform:"uppercase",letterSpacing:"0.1em",color:"var(--gold)",display:"block",marginBottom:"0.25rem"}}>Pro Tip</strong>
+            <aside className="recipe-tip">
+              <strong className="recipe-tip-label">Pro tip</strong>
               {recipe.tips}
-            </div>
+            </aside>
           )}
         </div>
         <div>
           <div className="recipe-section-title" style={{justifyContent:"space-between"}}>
-            <span>◈ Instructions</span>
-            <button className={`cook-mode-toggle${cookMode?" on":""}`} onClick={()=>setCookMode(m=>!m)}>
+            <h3 className="recipe-section-heading">◈ Instructions</h3>
+            <button type="button" className={`cook-mode-toggle${cookMode?" on":""}`} aria-pressed={cookMode} onClick={()=>setCookMode(m=>!m)}>
               {cookMode ? "✓ Cooking" : "👨‍🍳 Cook Mode"}
             </button>
           </div>
           {cookMode && (
             <div className="cook-progress">
-              <div className="cook-progress-bar"><div className="cook-progress-fill" style={{width:`${stepProgress}%`}}/></div>
-              <span className="cook-progress-label">{checkedSteps.size}/{recipe.steps?.length || 0} steps{stepProgress===100?" — Bon appétit! 🎉":""}</span>
+              <div className="cook-progress-bar" role="progressbar" aria-label="Cooking progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={stepProgress}>
+                <div className="cook-progress-fill" style={{width:`${stepProgress}%`}}/>
+              </div>
+              <span className="cook-progress-label">{checkedSteps.size}/{recipe.steps?.length || 0} steps{stepProgress===100?", bon appétit! 🎉":""}</span>
             </div>
           )}
           <ol className="step-list">
             {recipe.steps?.map((step, i) => (
               <li key={i} className={`step-item${cookMode?" checkable":""}${cookMode&&checkedSteps.has(i)?" checked":""}`}
-                onClick={cookMode ? ()=>setCheckedSteps(s=>toggleSet(s,i)) : undefined}>
+                role={cookMode ? "checkbox" : undefined}
+                aria-checked={cookMode ? checkedSteps.has(i) : undefined}
+                tabIndex={cookMode ? 0 : undefined}
+                onClick={cookMode ? ()=>setCheckedSteps(s=>toggleSet(s,i)) : undefined}
+                onKeyDown={cookMode ? event => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setCheckedSteps(s=>toggleSet(s,i));
+                  }
+                } : undefined}>
                 <span className="step-num">{cookMode&&checkedSteps.has(i)?"✓":i+1}</span>
                 <span className="step-text">{step}</span>
               </li>
@@ -1171,39 +1323,31 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
           <div className="improve-title">✦ AI Improvements</div>
           <div className="improve-chips">
             {IMPROVE_PROMPTS.map(p => (
-              <button key={p} className="improve-chip" onClick={() => onImprove(p)}>{p}</button>
+              <button type="button" key={p} className="improve-chip" onClick={() => onImprove(p)}>{p}</button>
             ))}
           </div>
         </div>
         <div className="recipe-actions">
-          <button className={`btn-action${saved?" saved":""}`} onClick={onSave}>
+          <button type="button" className={`btn-action${saved?" saved":""}`} aria-pressed={saved} onClick={onSave}>
             {saved ? "✓ Saved" : "♡ Save Recipe"}
           </button>
-          <button className="btn-action" onClick={() => {
-<<<<<<< HEAD
-            const txt = `${recipe.name}\n\nIngredients:\n${recipe.ingredients?.map(i=>`${i.amount} ${i.name}`).join('\n')}\n\nSteps:\n${recipe.steps?.map((s,i)=>`${i+1}. ${s}`).join('\n')}`;
-            copyText(txt, "Recipe copied");
-          }}>↗ Copy</button>
-          <button className="btn-action" onClick={() => {
-            const list = `${recipe.name} — Grocery List\n\n${recipe.ingredients?.map(i=>`• ${i.amount} ${i.name}`).join('\n')}`;
-=======
+          <button type="button" className="btn-action" onClick={() => {
             const txt = `${recipe.name} (serves ${servings})\n\nIngredients:\n${recipe.ingredients?.map(i=>`${scaleAmount(i.amount, factor)} ${i.name}`).join('\n')}\n\nSteps:\n${recipe.steps?.map((s,i)=>`${i+1}. ${s}`).join('\n')}`;
             copyText(txt, "Recipe copied");
           }}>↗ Copy</button>
-          <button className="btn-action" onClick={() => {
-            const list = `${recipe.name} — Grocery List (serves ${servings})\n\n${recipe.ingredients?.map(i=>`• ${scaleAmount(i.amount, factor)} ${i.name}`).join('\n')}`;
->>>>>>> 1e6988393620be5a83cceb186bf79e4dd1ae8f98
+          <button type="button" className="btn-action" onClick={() => {
+            const list = `${recipe.name}: Grocery List (serves ${servings})\n\n${recipe.ingredients?.map(i=>`• ${scaleAmount(i.amount, factor)} ${i.name}`).join('\n')}`;
             copyText(list, "Grocery list copied");
           }}>🛒 Grocery List</button>
           <div style={{position:"relative"}}>
-            <button className="btn-action" onClick={() => setShowPicker(p=>!p)}>📅 Add to Planner</button>
+            <button type="button" className="btn-action" aria-expanded={showPicker} onClick={() => setShowPicker(p=>!p)}>📅 Add to Planner</button>
             {showPicker && (
-              <div className="planner-picker-panel">
+              <div className="planner-picker-panel" role="group" aria-label="Choose meal plan slot">
                 <div>
                   <div className="planner-picker-label">Day</div>
                   <div className="picker-day-grid">
                     {DAYS.map(d=>(
-                      <button key={d} className={`picker-chip${pickerDay===d?" active":""}`} onClick={()=>setPickerDay(d)}>{d}</button>
+                      <button type="button" key={d} className={`picker-chip${pickerDay===d?" active":""}`} aria-pressed={pickerDay===d} onClick={()=>setPickerDay(d)}>{d}</button>
                     ))}
                   </div>
                 </div>
@@ -1211,11 +1355,11 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
                   <div className="planner-picker-label">Meal</div>
                   <div className="picker-meal-row">
                     {([["b","Breakfast"],["l","Lunch"],["d","Dinner"]] as const).map(([k,label])=>(
-                      <button key={k} className={`picker-chip${pickerMeal===k?" active":""}`} onClick={()=>setPickerMeal(k)}>{label}</button>
+                      <button type="button" key={k} className={`picker-chip${pickerMeal===k?" active":""}`} aria-pressed={pickerMeal===k} onClick={()=>setPickerMeal(k)}>{label}</button>
                     ))}
                   </div>
                 </div>
-                <button className="btn-picker-confirm" onClick={()=>{onAddToPlanner?.(pickerDay,pickerMeal);setShowPicker(false);}}>
+                <button type="button" className="btn-picker-confirm" onClick={()=>{onAddToPlanner?.(pickerDay,pickerMeal);setShowPicker(false);}}>
                   Add to Plan
                 </button>
               </div>
@@ -1223,7 +1367,7 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
           </div>
         </div>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -1270,7 +1414,7 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, o
       setRecipe(result);
     } catch (err) {
       const msg = err instanceof Error && err.message ? err.message : "Unknown error";
-      setError(`Generation failed: ${msg} — if this persists, check your API key in .env.local.`);
+      setError(`Generation failed: ${msg}. If this persists, check your API key in .env.local.`);
     }
     finally { setLoading(false); }
   };
@@ -1311,18 +1455,17 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, o
         <p className="hero-sub">Tell us what you have. Our AI generates complete, restaurant-quality recipes tailored to your taste, diet, and time.</p>
       </div>
       <div className="gen-card">
-        <div className="gen-card-title"><span style={{fontSize:"1.4rem"}}>◎</span> Your Ingredients</div>
-        <div className="ingredient-input-row">
+        <h2 className="gen-card-title"><span style={{fontSize:"1.4rem"}} aria-hidden="true">◎</span> Your Ingredients</h2>
+        <form className="ingredient-input-row" onSubmit={event=>{event.preventDefault();addIngredient();}}>
           <input className="ingredient-input" aria-label="Add an ingredient" placeholder="Add an ingredient (e.g. chicken, garlic…)"
             value={input} onChange={e=>setInput(e.target.value)}
-            onKeyDown={e=>e.key==="Enter"&&addIngredient()} />
-          <button className="btn-add" onClick={addIngredient}>+ Add</button>
-        </div>
+            maxLength={80} autoComplete="off" />
+          <button type="submit" className="btn-add">+ Add</button>
+        </form>
         <div style={{marginBottom:"0.75rem"}}>
           <span style={{fontSize:"0.65rem",color:"var(--smoke)",marginRight:"0.5rem",fontFamily:"Space Mono,monospace",textTransform:"uppercase",letterSpacing:"0.08em"}}>Quick add:</span>
           {QUICK.map(q=>(
-            <button key={q} onClick={()=>setIngredients(p=>p.includes(q)?p:[...p,q])}
-              style={{background:"none",border:"1px solid var(--border)",borderRadius:"100px",padding:"0.2rem 0.6rem",fontSize:"0.78rem",cursor:"pointer",marginRight:"0.35rem",marginBottom:"0.35rem",color:"var(--smoke)",fontFamily:"DM Sans,sans-serif"}}>
+            <button type="button" key={q} className="quick-add" aria-pressed={ingredients.includes(q)} onClick={()=>setIngredients(p=>p.includes(q)?p.filter(item=>item!==q):[...p,q])}>
               {q}
             </button>
           ))}
@@ -1332,17 +1475,13 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, o
           {ingredients.map(ing=>(
             <span key={ing} className="chip">
               {ing}
-              <button className="chip-x" aria-label={`Remove ${ing}`} onClick={()=>setIngredients(p=>p.filter(i=>i!==ing))}>×</button>
+              <button type="button" className="chip-x" aria-label={`Remove ${ing}`} onClick={()=>setIngredients(p=>p.filter(i=>i!==ing))}>×</button>
             </span>
           ))}
         </div>
         <div style={{borderTop:"1px solid var(--border)",paddingTop:"1.25rem",marginBottom:"1.25rem"}}>
           <div style={{fontSize:"0.65rem",fontFamily:"Space Mono,monospace",textTransform:"uppercase",letterSpacing:"0.08em",color:"var(--smoke)",marginBottom:"0.75rem"}}>Preferences</div>
           <div className="filter-row">
-<<<<<<< HEAD
-            <select className="select-field" aria-label="Cuisine preference" value={cuisine} onChange={e=>setCuisine(e.target.value)}>{CUISINES.map(c=><option key={c}>{c}</option>)}</select>
-            <select className="select-field" aria-label="Diet preference" value={diet} onChange={e=>setDiet(e.target.value)}>{DIETS.map(d=><option key={d}>{d}</option>)}</select>
-=======
             <select className="select-field" aria-label="Cuisine preference" value={cuisine} onChange={e=>setCuisine(e.target.value)}>
               <option>Any Cuisine</option>
               {Object.entries(CUISINE_GROUPS).map(([region, list])=>(
@@ -1352,19 +1491,18 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, o
               ))}
             </select>
             <select className="select-field" aria-label="Texture and consistency preference" value={texture} onChange={e=>setTexture(e.target.value)}>{TEXTURES.map(t=><option key={t}>{t}</option>)}</select>
->>>>>>> 1e6988393620be5a83cceb186bf79e4dd1ae8f98
             <select className="select-field" aria-label="Cooking time preference" value={time} onChange={e=>setTime(e.target.value)}>{TIMES.map(t=><option key={t}>{t}</option>)}</select>
             <select className="select-field" aria-label="Skill level preference" value={skill} onChange={e=>setSkill(e.target.value)}>{SKILLS.map(s=><option key={s}>{s}</option>)}</select>
             <select className="select-field" aria-label="Calorie preference" value={calories} onChange={e=>setCalories(e.target.value)}>{CALORIE_OPTIONS.map(c=><option key={c}>{c}</option>)}</select>
           </div>
           {texture !== "Any Texture" && texture !== "Regular" && (
             <div className="texture-note">
-              ✦ {texture} mode: full varied meals — never just soup.
+              ✦ {texture} mode: full varied meals, never just soup.
             </div>
           )}
         </div>
         <div style={{borderTop:"1px solid var(--border)",paddingTop:"1.25rem",marginBottom:"1.25rem"}}>
-          <button className="diet-panel-toggle" onClick={()=>setShowDietPanel(p=>!p)} aria-expanded={showDietPanel}>
+          <button type="button" className="diet-panel-toggle" onClick={()=>setShowDietPanel(p=>!p)} aria-expanded={showDietPanel}>
             <span style={{fontSize:"0.65rem",fontFamily:"Space Mono,monospace",textTransform:"uppercase",letterSpacing:"0.08em",color:"var(--smoke)"}}>
               Dietary Needs {diets.length > 0 && <span className="nav-badge">{diets.length}</span>}
             </span>
@@ -1375,7 +1513,7 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, o
               {diets.map(d=>(
                 <span key={d} className="chip">
                   {d}
-                  <button className="chip-x" aria-label={`Remove ${d}`} onClick={()=>toggleDiet(d)}>×</button>
+                  <button type="button" className="chip-x" aria-label={`Remove ${d}`} onClick={()=>toggleDiet(d)}>×</button>
                 </span>
               ))}
             </div>
@@ -1387,7 +1525,7 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, o
                   <div className="diet-group-label">{group.icon} {group.label}</div>
                   <div className="improve-chips">
                     {group.options.map(d=>(
-                      <button key={d} className={`diet-chip${diets.includes(d)?" active":""}`} onClick={()=>toggleDiet(d)} aria-pressed={diets.includes(d)}>
+                      <button type="button" key={d} className={`diet-chip${diets.includes(d)?" active":""}`} onClick={()=>toggleDiet(d)} aria-pressed={diets.includes(d)}>
                         {d}
                       </button>
                     ))}
@@ -1399,27 +1537,31 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, o
                 <textarea
                   className="ingredient-input diet-custom"
                   aria-label="Custom dietary restrictions and notes"
-                  placeholder="Describe anything that doesn't fit above — e.g. post-surgery recovery, chewing difficulty, no raw onions, bariatric portions, only a microwave available, kid-friendly textures…"
+                  placeholder="Describe anything that doesn't fit above, such as post-surgery recovery, chewing difficulty, no raw onions, bariatric portions, microwave-only cooking, or kid-friendly textures."
                   value={customDiet}
                   onChange={e=>setCustomDiet(e.target.value)}
+                  maxLength={500}
                   rows={3}
                 />
               </div>
+              <p className="diet-disclaimer">
+                Health and allergy filters guide recipe generation but do not replace medical advice. Verify packaged ingredients and cross-contamination risks.
+              </p>
             </div>
           )}
         </div>
         <div className="generate-row">
-          <button className="btn-generate" onClick={generate} disabled={loading||improving}>
+          <button type="button" className="btn-generate" onClick={generate} disabled={loading||improving}>
             {loading||improving ? <><div className="shimmer"/><span>{loading?"Generating your recipe…":"Improving recipe…"}</span></> : <><span style={{fontSize:"1.3rem"}}>✦</span><span>Generate Recipe with AI</span></>}
           </button>
-          <button className="btn-surprise" onClick={surprise} disabled={loading||improving} title="Random cuisine, your dietary needs still respected">
+          <button type="button" className="btn-surprise" onClick={surprise} disabled={loading||improving} title="Random cuisine, your dietary needs still respected">
             🎲 Surprise Me
           </button>
         </div>
-        {error && <div style={{marginTop:"1rem",padding:"0.75rem 1rem",background:"#FFF0EE",border:"1px solid #FFCDC6",borderRadius:"10px",fontSize:"0.85rem",color:"#C4622D"}}>{error}</div>}
+        {error && <div className="error-message" role="alert">{error}</div>}
       </div>
       {loading && (
-        <div className="loading-state">
+        <div className="loading-state" role="status" aria-live="polite">
           <div className="loading-spinner"/>
           <div>
             <div className="loading-label">Crafting your recipe…</div>
@@ -1451,11 +1593,9 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
   const [loading, setLoading] = useState(false);
   const [improving, setImproving] = useState(false);
   const [error, setError] = useState<string|null>(null);
+  const lastFocusedRef = useRef<HTMLElement|null>(null);
 
   const filters = ["All", ...Array.from(new Set(SAMPLE_RECIPES.map(r=>r.cuisine)))];
-<<<<<<< HEAD
-  const shown = filter==="All" ? SAMPLE_RECIPES : SAMPLE_RECIPES.filter(r=>r.cuisine===filter);
-=======
   const dietFilters = ["All", ...Array.from(new Set(SAMPLE_RECIPES.flatMap(r=>r.tags))).sort()];
   const TIME_FILTERS: Array<[string, (m:number)=>boolean]> = [
     ["All", ()=>true],
@@ -1476,21 +1616,8 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
   useEffect(() => {
     if (!activeCard) return;
 
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setActiveCard(null);
-        setGeneratedRecipe(null);
-        setError(null);
-      }
-    };
-
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [activeCard]);
->>>>>>> 1e6988393620be5a83cceb186bf79e4dd1ae8f98
-
-  useEffect(() => {
-    if (!activeCard) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
 
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -1501,10 +1628,19 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
     };
 
     window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+      lastFocusedRef.current?.focus();
+    };
   }, [activeCard]);
 
   const openCard = async (card: SampleRecipe) => {
+    if (!activeCard) {
+      lastFocusedRef.current = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    }
     setActiveCard(card);
     setGeneratedRecipe(null);
     setError(null);
@@ -1539,24 +1675,24 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
       <div className="discover-page">
         <div style={{marginBottom:"2rem"}}>
           <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>Recipe Collection</div>
-          <div className="discover-title">Discover <em style={{fontFamily:"Cormorant Garamond,serif",fontStyle:"italic",color:"var(--terra)"}}>exceptional</em> dishes</div>
-          <p style={{color:"var(--smoke)",fontSize:"0.9rem"}}>Click any card to get the full AI-generated recipe with ingredients, steps, and nutrition.</p>
+          <h1 className="discover-title">Discover <em style={{fontFamily:"Cormorant Garamond,serif",fontStyle:"italic",color:"var(--terra)"}}>exceptional</em> dishes</h1>
+          <p style={{color:"var(--smoke)",fontSize:"0.9rem"}}>Open any dish to get the full AI-generated recipe with ingredients, steps, and nutrition.</p>
         </div>
         <div className="filter-bar">
           <span className="filter-label">Cuisine:</span>
-          {filters.map(f=><button key={f} className={`filter-chip${filter===f?" active":""}`} onClick={()=>setFilter(f)}>{f}</button>)}
+          {filters.map(f=><button type="button" key={f} className={`filter-chip${filter===f?" active":""}`} aria-pressed={filter===f} onClick={()=>setFilter(f)}>{f}</button>)}
         </div>
         <div className="filter-bar">
           <span className="filter-label">Diet:</span>
-          {dietFilters.map(f=><button key={f} className={`filter-chip${dietFilter===f?" active":""}`} onClick={()=>setDietFilter(f)}>{f}</button>)}
+          {dietFilters.map(f=><button type="button" key={f} className={`filter-chip${dietFilter===f?" active":""}`} aria-pressed={dietFilter===f} onClick={()=>setDietFilter(f)}>{f}</button>)}
         </div>
         <div className="filter-bar">
           <span className="filter-label">Time:</span>
-          {TIME_FILTERS.map(([label])=><button key={label} className={`filter-chip${timeFilter===label?" active":""}`} onClick={()=>setTimeFilter(label)}>{label}</button>)}
+          {TIME_FILTERS.map(([label])=><button type="button" key={label} className={`filter-chip${timeFilter===label?" active":""}`} aria-pressed={timeFilter===label} onClick={()=>setTimeFilter(label)}>{label}</button>)}
           <span className="filter-label" style={{marginLeft:"0.75rem"}}>Skill:</span>
-          {DIFF_FILTERS.map(f=><button key={f} className={`filter-chip${diffFilter===f?" active":""}`} onClick={()=>setDiffFilter(f)}>{f}</button>)}
+          {DIFF_FILTERS.map(f=><button type="button" key={f} className={`filter-chip${diffFilter===f?" active":""}`} aria-pressed={diffFilter===f} onClick={()=>setDiffFilter(f)}>{f}</button>)}
           {(filter!=="All"||dietFilter!=="All"||timeFilter!=="All"||diffFilter!=="All") && (
-            <button className="filter-chip" style={{marginLeft:"auto",color:"var(--terra)",borderColor:"var(--terra)"}}
+            <button type="button" className="filter-chip" style={{marginLeft:"auto",color:"var(--terra)",borderColor:"var(--terra)"}}
               onClick={()=>{setFilter("All");setDietFilter("All");setTimeFilter("All");setDiffFilter("All");}}>
               ✕ Clear ({shown.length} shown)
             </button>
@@ -1566,7 +1702,7 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
           <div className="empty-state">
             <div className="empty-icon">🔍</div>
             <div className="empty-text">No recipes match those filters</div>
-            <p style={{fontSize:"0.9rem",color:"var(--smoke)",marginTop:"0.5rem"}}>Try clearing a filter — or use Generate to create exactly what you need.</p>
+            <p style={{fontSize:"0.9rem",color:"var(--smoke)",marginTop:"0.5rem"}}>Try clearing a filter, or use Generate to create exactly what you need.</p>
           </div>
         )}
         <div className="recipe-grid">
@@ -1598,12 +1734,12 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
 
       {activeCard && (
         <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-inner" role="dialog" aria-modal="true" aria-label={activeCard.name} onClick={e=>e.stopPropagation()}>
-            <button className="modal-close" aria-label="Close recipe dialog" onClick={closeModal}>✕</button>
+          <div className="modal-inner" role="dialog" aria-modal="true" aria-label={activeCard.name} onKeyDown={trapDialogFocus} onClick={e=>e.stopPropagation()}>
+            <button type="button" className="modal-close" aria-label="Close recipe dialog" autoFocus onClick={closeModal}>✕</button>
 
             {loading && (
               <div className="modal-loading-card">
-                <div className="loading-state">
+                <div className="loading-state" role="status" aria-live="polite">
                   <div className="loading-spinner"/>
                   <div>
                     <div className="loading-label">Crafting {activeCard.name}…</div>
@@ -1615,8 +1751,8 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
 
             {error && !loading && (
               <div className="modal-error-card">
-                <p style={{color:"var(--terra)",marginBottom:"1rem"}}>{error}</p>
-                <button className="btn-add" onClick={()=>openCard(activeCard)}>Try Again</button>
+                <p role="alert" style={{color:"var(--error)",marginBottom:"1rem"}}>{error}</p>
+                <button type="button" className="btn-add" onClick={()=>openCard(activeCard)}>Try Again</button>
               </div>
             )}
 
@@ -1664,8 +1800,12 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
     setEditingIdx(i); setEditName(items[i].name); setEditQty(items[i].qty); setEditStatus(items[i].status);
   };
   const saveEdit = () => {
-    if (editingIdx===null) return;
-    setItems(p=>p.map((item,i)=>i===editingIdx?{name:editName,qty:editQty,status:editStatus}:item));
+    if (editingIdx===null || !editName.trim()) return;
+    setItems(p=>p.map((item,i)=>i===editingIdx?{
+      name:editName.trim(),
+      qty:editQty.trim() || "1 unit",
+      status:editStatus
+    }:item));
     setEditingIdx(null);
   };
 
@@ -1674,60 +1814,66 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
       <div className="pantry-page">
         <div style={{marginBottom:"2rem"}}>
           <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>Smart Pantry</div>
-          <div className="discover-title">Your <em style={{fontFamily:"Cormorant Garamond,serif",fontStyle:"italic",color:"var(--terra)"}}>pantry</em></div>
+          <h1 className="discover-title">Your <em style={{fontFamily:"Cormorant Garamond,serif",fontStyle:"italic",color:"var(--terra)"}}>pantry</em></h1>
         </div>
-        <div style={{display:"flex",gap:"0.5rem",marginBottom:"1.5rem"}}>
-          <input className="ingredient-input" aria-label="Add ingredient to pantry" placeholder="Add ingredient to pantry…" value={newItem} onChange={e=>setNewItem(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}/>
-          <button className="btn-add" onClick={add}>+ Add</button>
-        </div>
+        <form style={{display:"flex",gap:"0.5rem",marginBottom:"1.5rem"}} onSubmit={event=>{event.preventDefault();add();}}>
+          <input className="ingredient-input" aria-label="Add ingredient to pantry" placeholder="Add ingredient to pantry…" value={newItem} maxLength={80} autoComplete="off" onChange={e=>setNewItem(e.target.value)}/>
+          <button type="submit" className="btn-add">+ Add</button>
+        </form>
         <div className="pantry-grid">
           <div className="pantry-card">
-            <div className="pantry-card-title">◎ Current Stock</div>
+            <h2 className="pantry-card-title">◎ Current Stock</h2>
+            {items.length===0 && (
+              <p style={{fontSize:"0.85rem",color:"var(--smoke)",padding:"0.75rem 0 1rem"}}>
+                Your pantry is empty. Add an ingredient above to get started.
+              </p>
+            )}
             {items.map((item,i)=>(
               <div key={i} className="pantry-item">
                 {editingIdx===i ? (
                   <div className="pantry-item-edit">
-                    <input className="ingredient-input" aria-label="Ingredient name" style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem"}} value={editName} onChange={e=>setEditName(e.target.value)}/>
+                    <input className="ingredient-input" aria-label="Ingredient name" style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem"}} value={editName} maxLength={80} onChange={e=>setEditName(e.target.value)} onKeyDown={event=>{if(event.key==="Enter")saveEdit();if(event.key==="Escape")setEditingIdx(null);}}/>
                     <div className="pantry-item-controls">
-                      <input className="ingredient-input" aria-label="Ingredient quantity" style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem",width:"90px"}} value={editQty} onChange={e=>setEditQty(e.target.value)} placeholder="qty"/>
-                      <button className={`pantry-status-toggle ${editStatus}`} onClick={()=>setEditStatus(s=>s==="ok"?"low":"ok")}>
+                      <input className="ingredient-input" aria-label="Ingredient quantity" style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem",width:"90px"}} value={editQty} maxLength={40} onChange={e=>setEditQty(e.target.value)} placeholder="qty"/>
+                      <button type="button" className={`pantry-status-toggle ${editStatus}`} aria-label={`Stock status: ${editStatus==="ok"?"in stock":"low"}. Change status.`} onClick={()=>setEditStatus(s=>s==="ok"?"low":"ok")}>
                         {editStatus==="ok"?"In Stock":"Low"}
                       </button>
-                      <button className="pantry-edit-save" onClick={saveEdit}>✓ Save</button>
-                      <button className="pantry-edit-cancel" onClick={()=>setEditingIdx(null)}>Cancel</button>
+                      <button type="button" className="pantry-edit-save" disabled={!editName.trim()} onClick={saveEdit}>✓ Save</button>
+                      <button type="button" className="pantry-edit-cancel" onClick={()=>setEditingIdx(null)}>Cancel</button>
                     </div>
                   </div>
                 ) : (
                   <>
                     <div className="pantry-item-name">
-                      <span className={`pantry-item-dot${item.status==="low"?" low":""}`}/>
+                      <span className={`pantry-item-dot${item.status==="low"?" low":""}`} aria-hidden="true"/>
                       {item.name}
+                      <span className="sr-only">, {item.status==="low"?"low stock":"in stock"}</span>
                     </div>
                     <div className="pantry-item-actions">
                       <span style={{fontSize:"0.78rem",color:"var(--smoke)",fontFamily:"Space Mono,monospace"}}>{item.qty}</span>
-                      <button className="pantry-icon-btn edit" title="Edit" onClick={()=>startEdit(i)}>✎</button>
-                      <button className="pantry-icon-btn delete" title="Remove" onClick={()=>setItems(p=>p.filter((_,j)=>j!==i))}>×</button>
+                      <button type="button" className="pantry-icon-btn edit" aria-label={`Edit ${item.name}`} onClick={()=>startEdit(i)}>✎</button>
+                      <button type="button" className="pantry-icon-btn delete" aria-label={`Remove ${item.name}`} onClick={()=>setItems(p=>p.filter((_,j)=>j!==i))}>×</button>
                     </div>
                   </>
                 )}
               </div>
             ))}
-            <button className="pantry-suggest-btn" onClick={onGenerateFromPantry}>✦ Generate Recipe from Pantry</button>
+            <button type="button" className="pantry-suggest-btn" disabled={items.length===0} onClick={onGenerateFromPantry}>✦ Generate Recipe from Pantry</button>
           </div>
           <div>
             <div className="pantry-card" style={{marginBottom:"1rem"}}>
-              <div className="pantry-card-title">🛒 Shopping Suggestions</div>
+              <h2 className="pantry-card-title">🛒 Shopping Suggestions</h2>
               {items.filter(i=>i.status==="low").length===0 ? (
-                <p style={{fontSize:"0.82rem",color:"var(--smoke)",fontStyle:"italic",padding:"0.4rem 0"}}>Nothing running low — your pantry is fully stocked. ✓</p>
+                <p style={{fontSize:"0.82rem",color:"var(--smoke)",fontStyle:"italic",padding:"0.4rem 0"}}>Nothing is running low. Your pantry is fully stocked. ✓</p>
               ) : items.filter(i=>i.status==="low").map(item=>(
                 <div key={item.name} className="pantry-item">
-                  <div className="pantry-item-name"><span className="pantry-item-dot low"/>{item.name}</div>
+                  <div className="pantry-item-name"><span className="pantry-item-dot low" aria-hidden="true"/>{item.name}</div>
                   <span style={{fontSize:"0.75rem",color:"var(--terra)"}}>Running low ({item.qty} left)</span>
                 </div>
               ))}
             </div>
             <div className="pantry-card">
-              <div className="pantry-card-title">◈ Recipe Suggestions</div>
+              <h2 className="pantry-card-title">◈ Recipe Suggestions</h2>
               {["Aglio e Olio","Chicken Piccata","Frittata","Lemon Pasta"].map(r=>(
                 <div key={r} style={{padding:"0.4rem 0",fontSize:"0.88rem",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <span>{r}</span>
@@ -1750,7 +1896,7 @@ function PlannerPage({ mealPlan, onRegenerate }: { mealPlan: MealPlan; onRegener
       <div className="planner-page">
         <div style={{marginBottom:"1.5rem"}}>
           <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>AI Meal Planner</div>
-          <div className="discover-title">Weekly <em style={{fontFamily:"Cormorant Garamond,serif",fontStyle:"italic",color:"var(--terra)"}}>meal plan</em></div>
+          <h1 className="discover-title">Weekly <em style={{fontFamily:"Cormorant Garamond,serif",fontStyle:"italic",color:"var(--terra)"}}>meal plan</em></h1>
         </div>
         <div style={{display:"flex",gap:"1rem",marginBottom:"1.5rem",flexWrap:"wrap",alignItems:"center"}}>
           {[["Target","1800 kcal/day"],["Protein","120g"],["Carbs","200g"],["Fat","65g"]].map(([label,val])=>(
@@ -1759,7 +1905,7 @@ function PlannerPage({ mealPlan, onRegenerate }: { mealPlan: MealPlan; onRegener
               <div style={{fontFamily:"Cormorant Garamond,serif",fontSize:"1.3rem",fontWeight:600,color:"var(--bark)"}}>{val}</div>
             </div>
           ))}
-          <button onClick={onRegenerate} style={{padding:"0.75rem 1.25rem",borderRadius:"12px",background:"var(--terra)",color:"white",border:"none",cursor:"pointer",fontFamily:"DM Sans,sans-serif",fontSize:"0.9rem",fontWeight:500,marginLeft:"auto"}}>✦ Regenerate Plan</button>
+          <button type="button" onClick={onRegenerate} style={{minHeight:"44px",padding:"0.75rem 1.25rem",borderRadius:"12px",background:"var(--terra)",color:"white",border:"none",cursor:"pointer",fontFamily:"DM Sans,sans-serif",fontSize:"0.9rem",fontWeight:500,marginLeft:"auto"}}>✦ Regenerate Plan</button>
         </div>
         <div className="planner-grid">
           {days.map(day=>(
@@ -1787,7 +1933,7 @@ function SavedPage({ saved, onRemove }: { saved:Recipe[]; onRemove:(r:Recipe)=>v
       <div className="saved-page">
         <div style={{marginBottom:"2rem"}}>
           <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>Your Collection</div>
-          <div className="discover-title">Saved <em style={{fontFamily:"Cormorant Garamond,serif",fontStyle:"italic",color:"var(--terra)"}}>recipes</em></div>
+          <h1 className="discover-title">Saved <em style={{fontFamily:"Cormorant Garamond,serif",fontStyle:"italic",color:"var(--terra)"}}>recipes</em></h1>
         </div>
         {saved.length===0 ? (
           <div className="empty-state">
@@ -1798,7 +1944,7 @@ function SavedPage({ saved, onRemove }: { saved:Recipe[]; onRemove:(r:Recipe)=>v
         ) : (
           <div className="recipe-grid">
             {saved.map((r,i)=>(
-              <div key={i} className="recipe-card">
+              <article key={i} className="recipe-card saved-card">
                 <div className="recipe-card-img">
                   <span style={{position:"relative",zIndex:1,fontSize:"3rem"}}>{r.emoji||"🍽️"}</span>
                   <div className="recipe-card-img-overlay"/>
@@ -1807,14 +1953,14 @@ function SavedPage({ saved, onRemove }: { saved:Recipe[]; onRemove:(r:Recipe)=>v
                 <div className="recipe-card-body">
                   <div className="recipe-card-name">{r.name}</div>
                   <div className="recipe-card-meta">
-                    <span>⏱ {r.time||"—"}</span>
-                    <span>🔥 {r.nutrition?.calories||r.calories||"—"} cal</span>
+                    <span>⏱ {r.time||"Not set"}</span>
+                    <span>🔥 {r.nutrition?.calories||r.calories||"Not set"} cal</span>
                   </div>
-                  <button className="btn-action" style={{marginTop:"0.75rem",width:"100%",justifyContent:"center",background:"var(--warm-white)"}} onClick={()=>onRemove(r)}>
+                  <button type="button" className="btn-action" style={{marginTop:"0.75rem",width:"100%",justifyContent:"center",background:"var(--warm-white)"}} onClick={()=>onRemove(r)}>
                     Remove
                   </button>
                 </div>
-              </div>
+              </article>
             ))}
           </div>
         )}
@@ -1866,21 +2012,27 @@ export default function RecipePlatform() {
     <>
       <style dangerouslySetInnerHTML={{ __html: FONTS + CSS }} />
       <div className="app">
+        <a className="skip-link" href="#main-content">Skip to main content</a>
         <nav className="nav" aria-label="Primary">
-          <div className="nav-logo"><span style={{fontSize:"1.2rem"}}>◈</span> Culinari<span>a</span></div>
-          <div className="nav-tabs" role="tablist" aria-label="Culina sections">
+          <div className="nav-logo">
+            <span className="nav-logo-mark" style={{fontSize:"1.2rem"}} aria-hidden="true">◈</span>
+            <span>Culinari<span className="nav-logo-accent">a</span></span>
+          </div>
+          <div className="nav-tabs">
             {[{id:"generate",label:"Generate"},{id:"discover",label:"Discover"},{id:"pantry",label:"Pantry"},{id:"planner",label:"Planner"},{id:"saved",label:"Saved",badge:saved.length||null}].map(t=>(
-              <button key={t.id} role="tab" aria-selected={tab===t.id} className={`nav-tab${tab===t.id?" active":""}`} onClick={()=>setTab(t.id)}>
+              <button type="button" key={t.id} aria-current={tab===t.id?"page":undefined} className={`nav-tab${tab===t.id?" active":""}`} onClick={()=>setTab(t.id)}>
                 {t.label}{t.badge?<span className="nav-badge">{t.badge}</span>:null}
               </button>
             ))}
           </div>
         </nav>
-        {tab==="generate" && <GeneratorPage onSave={handleSave} savedIds={savedIds} initialIngredients={pendingIngredients} onAddToPlanner={handleAddToPlanner} onToast={addToast}/>}
-        {tab==="discover" && <DiscoverPage onSave={handleSave} savedIds={savedIds} onAddToPlanner={handleAddToPlanner} onToast={addToast}/>}
-        {tab==="pantry" && <PantryPage items={pantryItems} setItems={setPantryItems} onGenerateFromPantry={()=>{setPendingIngredients(pantryItems.map(i=>i.name));setTab("generate");}}/>}
-        {tab==="planner" && <PlannerPage mealPlan={mealPlan} onRegenerate={handleRegeneratePlan}/>}
-        {tab==="saved" && <SavedPage saved={saved} onRemove={handleSave}/>}
+        <main id="main-content" tabIndex={-1}>
+          {tab==="generate" && <GeneratorPage onSave={handleSave} savedIds={savedIds} initialIngredients={pendingIngredients} onAddToPlanner={handleAddToPlanner} onToast={addToast}/>}
+          {tab==="discover" && <DiscoverPage onSave={handleSave} savedIds={savedIds} onAddToPlanner={handleAddToPlanner} onToast={addToast}/>}
+          {tab==="pantry" && <PantryPage items={pantryItems} setItems={setPantryItems} onGenerateFromPantry={()=>{setPendingIngredients(pantryItems.map(i=>i.name));setTab("generate");}}/>}
+          {tab==="planner" && <PlannerPage mealPlan={mealPlan} onRegenerate={handleRegeneratePlan}/>}
+          {tab==="saved" && <SavedPage saved={saved} onRemove={handleSave}/>}
+        </main>
         <Toast toasts={toasts}/>
       </div>
     </>
