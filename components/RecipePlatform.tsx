@@ -3,6 +3,7 @@
 // Culinaria: multi-select dietary needs, textures, expanded cuisines, cook mode, scaling, and surprise.
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
+import { animate, createScope, stagger } from "animejs";
 import {
   ArrowRight,
   CaretDown,
@@ -114,6 +115,150 @@ const CSS = `
   }
 
   .page { padding-top: 80px; min-height: 100vh; }
+  .ambient-page {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background: var(--cream);
+  }
+  .page-content-layer {
+    position: relative;
+    z-index: 2;
+  }
+  .page-ambience {
+    --pointer-x: 0px;
+    --pointer-y: 0px;
+    position: absolute;
+    z-index: 0;
+    inset: 64px 0 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .ambient-wash,
+  .ambient-halo {
+    position: absolute;
+    border-radius: 999px;
+    will-change: transform;
+  }
+  .ambient-wash {
+    inset: -12% -8% 0;
+    border-radius: 0;
+    background:
+      radial-gradient(circle at 12% 18%, oklch(0.91 0.05 138 / 0.7), transparent 31%),
+      radial-gradient(circle at 88% 24%, oklch(0.91 0.07 53 / 0.62), transparent 30%),
+      linear-gradient(180deg, oklch(0.975 0.012 70), oklch(0.955 0.025 82));
+  }
+  .page-ambience-discover .ambient-wash {
+    background:
+      radial-gradient(circle at 8% 14%, oklch(0.9 0.07 145 / 0.72), transparent 29%),
+      radial-gradient(circle at 94% 18%, oklch(0.9 0.1 42 / 0.62), transparent 27%),
+      linear-gradient(180deg, oklch(0.978 0.014 74), oklch(0.95 0.03 91));
+  }
+  .page-ambience-pantry .ambient-wash {
+    background:
+      radial-gradient(circle at 18% 12%, oklch(0.91 0.075 138 / 0.74), transparent 31%),
+      radial-gradient(circle at 86% 36%, oklch(0.93 0.055 89 / 0.72), transparent 28%),
+      linear-gradient(180deg, oklch(0.975 0.014 108), oklch(0.945 0.035 136));
+  }
+  .page-ambience-planner .ambient-wash {
+    background:
+      radial-gradient(circle at 15% 14%, oklch(0.94 0.08 91 / 0.76), transparent 31%),
+      radial-gradient(circle at 91% 26%, oklch(0.9 0.065 153 / 0.7), transparent 28%),
+      linear-gradient(180deg, oklch(0.978 0.015 82), oklch(0.95 0.032 102));
+  }
+  .page-ambience-saved .ambient-wash {
+    background:
+      radial-gradient(circle at 13% 18%, oklch(0.92 0.075 47 / 0.68), transparent 29%),
+      radial-gradient(circle at 88% 20%, oklch(0.91 0.06 140 / 0.66), transparent 31%),
+      linear-gradient(180deg, oklch(0.978 0.014 64), oklch(0.95 0.03 70));
+  }
+  .ambient-halo {
+    border: 1px solid color-mix(in srgb, var(--terra) 20%, transparent);
+    opacity: 0.54;
+  }
+  .ambient-halo-one {
+    top: 5%;
+    left: -7rem;
+    width: 25rem;
+    height: 25rem;
+  }
+  .ambient-halo-two {
+    top: 34%;
+    right: -9rem;
+    width: 31rem;
+    height: 31rem;
+    border-color: color-mix(in srgb, var(--sage) 24%, transparent);
+  }
+  .ambient-pointer-layer {
+    position: absolute;
+    inset: 0;
+    transform: translate3d(var(--pointer-x), var(--pointer-y), 0);
+    transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+  }
+  .ambient-ingredient,
+  .ambient-linen {
+    position: absolute;
+    max-width: none;
+    height: auto;
+    object-fit: contain;
+    mix-blend-mode: multiply;
+    filter: saturate(0.92);
+    will-change: transform;
+  }
+  .ambient-ingredient {
+    width: clamp(170px, 20vw, 320px);
+    opacity: 0.24;
+  }
+  .ambient-ingredient-primary { top: 1.5%; right: -5rem; }
+  .ambient-ingredient-secondary {
+    top: 48%;
+    left: -5rem;
+    width: clamp(150px, 18vw, 280px);
+    opacity: 0.19;
+  }
+  .ambient-linen {
+    right: -7rem;
+    bottom: -6rem;
+    width: min(42vw, 620px);
+    opacity: 0.12;
+  }
+  .ambient-dots {
+    position: absolute;
+    top: 18%;
+    left: 4%;
+    width: 132px;
+    height: 132px;
+    opacity: 0.22;
+    background-image: radial-gradient(circle, color-mix(in srgb, var(--sage) 68%, transparent) 1.4px, transparent 1.5px);
+    background-size: 17px 17px;
+    mask-image: linear-gradient(135deg, black, transparent 78%);
+  }
+  .ambient-page .filter-bar,
+  .ambient-page .recipe-card,
+  .ambient-page .pantry-card,
+  .ambient-page .planner-day,
+  .ambient-page .empty-state {
+    background-color: color-mix(in srgb, var(--surface) 92%, transparent);
+  }
+  .ambient-page .empty-state {
+    display: flex;
+    min-height: 260px;
+    max-width: 620px;
+    margin: 2rem auto;
+    padding: 3rem 2rem;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    box-shadow: 0 18px 48px rgba(92, 69, 58, 0.06);
+  }
+  .ambient-page .filter-bar,
+  .ambient-page .pantry-card,
+  .ambient-page .planner-day {
+    box-shadow: 0 18px 48px rgba(92, 69, 58, 0.06);
+  }
 
   .hero {
     padding: 4rem 2rem 3rem;
@@ -755,6 +900,13 @@ const CSS = `
       font-size: 0.72rem; white-space: nowrap;
     }
     .page { padding-top: 120px; }
+    .page-ambience { inset: 104px 0 0; }
+    .ambient-ingredient { width: 180px; opacity: 0.16; }
+    .ambient-ingredient-primary { top: 2%; right: -6rem; }
+    .ambient-ingredient-secondary { top: 55%; left: -6rem; }
+    .ambient-linen { width: 360px; opacity: 0.09; }
+    .ambient-halo-one { left: -14rem; }
+    .ambient-halo-two { right: -17rem; }
     .hero { padding: 2.5rem 1.25rem 2rem; }
     .hero-title { font-size: 2.85rem; }
     .hero-sub { font-size: 1rem; margin-bottom: 1rem; }
@@ -1335,6 +1487,7 @@ const CSS = `
       scroll-behavior: auto !important;
       transition-duration: 0.01ms !important;
     }
+    .ambient-pointer-layer { transform: none !important; }
   }
 
   @media (forced-colors: active) {
@@ -2380,6 +2533,127 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, o
 // ─── DiscoverPage ─────────────────────────────────────────────────────────────
 type SampleRecipe = typeof SAMPLE_RECIPES[0];
 
+type AmbientVariant = "discover" | "pantry" | "planner" | "saved";
+
+const AMBIENT_ASSETS: Record<AmbientVariant, { primary: string; secondary: string }> = {
+  discover: {
+    primary: "/images/editorial/tomato.png",
+    secondary: "/images/editorial/basil.png",
+  },
+  pantry: {
+    primary: "/images/editorial/garlic.png",
+    secondary: "/images/editorial/herb-scatter.png",
+  },
+  planner: {
+    primary: "/images/editorial/lemon.png",
+    secondary: "/images/editorial/basil.png",
+  },
+  saved: {
+    primary: "/images/editorial/basil.png",
+    secondary: "/images/editorial/tomato.png",
+  },
+};
+
+function AmbientPageBackground({ variant }: { variant: AmbientVariant }) {
+  const root = useRef<HTMLDivElement>(null);
+  const assets = AMBIENT_ASSETS[variant];
+
+  useEffect(() => {
+    if (!root.current) return;
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let frame = 0;
+    let scope: ReturnType<typeof createScope> | null = null;
+
+    if (!reduceMotion) {
+      scope = createScope({ root }).add(() => {
+        animate(".ambient-float", {
+          x: stagger([-14, 14]),
+          y: stagger([10, -12], { from: "center" }),
+          rotate: stagger([-4, 4]),
+          duration: 8800,
+          delay: stagger(420),
+          ease: "inOut(2)",
+          alternate: true,
+          loop: true,
+        });
+
+        animate(".ambient-halo", {
+          scale: stagger([0.96, 1.045]),
+          duration: 9600,
+          delay: stagger(900),
+          ease: "inOut(2)",
+          alternate: true,
+          loop: true,
+        });
+
+        animate(".ambient-dots", {
+          x: 16,
+          y: -9,
+          duration: 7200,
+          ease: "inOut(2)",
+          alternate: true,
+          loop: true,
+        });
+      });
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (event.pointerType === "touch") return;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const x = ((event.clientX / window.innerWidth) - 0.5) * 16;
+        const y = ((event.clientY / window.innerHeight) - 0.5) * 12;
+        root.current?.style.setProperty("--pointer-x", `${x.toFixed(2)}px`);
+        root.current?.style.setProperty("--pointer-y", `${y.toFixed(2)}px`);
+      });
+    };
+
+    if (!reduceMotion) window.addEventListener("pointermove", handlePointerMove, { passive: true });
+
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("pointermove", handlePointerMove);
+      scope?.revert();
+    };
+  }, [variant]);
+
+  return (
+    <div ref={root} className={`page-ambience page-ambience-${variant}`} aria-hidden="true">
+      <div className="ambient-wash" />
+      <span className="ambient-halo ambient-halo-one" />
+      <span className="ambient-halo ambient-halo-two" />
+      <span className="ambient-dots" />
+      <div className="ambient-pointer-layer">
+        <Image
+          className="ambient-ingredient ambient-ingredient-primary ambient-float"
+          src={assets.primary}
+          alt=""
+          width={540}
+          height={540}
+          sizes="(max-width: 640px) 180px, 24vw"
+        />
+        <Image
+          className="ambient-ingredient ambient-ingredient-secondary ambient-float"
+          src={assets.secondary}
+          alt=""
+          width={520}
+          height={420}
+          sizes="(max-width: 640px) 180px, 22vw"
+        />
+        <Image
+          className="ambient-linen ambient-float"
+          src="/images/editorial/linen.png"
+          alt=""
+          width={720}
+          height={480}
+          sizes="(max-width: 640px) 360px, 42vw"
+        />
+      </div>
+    </div>
+  );
+}
+
 function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
   onSave:(r:Recipe)=>void; savedIds:Set<string>;
   onAddToPlanner: (recipe: Recipe, day: string, meal: MealKey) => void;
@@ -2472,8 +2746,9 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
   };
 
   return (
-    <div className="page">
-      <div className="discover-page">
+    <div className="page ambient-page">
+      <AmbientPageBackground variant="discover" />
+      <div className="discover-page page-content-layer">
         <div style={{marginBottom:"2rem"}}>
           <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>Recipe Collection</div>
           <h1 className="discover-title">Discover <em style={{fontFamily:"Cormorant Garamond,serif",fontStyle:"italic",color:"var(--terra)"}}>exceptional</em> dishes</h1>
@@ -2611,8 +2886,9 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
   };
 
   return (
-    <div className="page">
-      <div className="pantry-page">
+    <div className="page ambient-page">
+      <AmbientPageBackground variant="pantry" />
+      <div className="pantry-page page-content-layer">
         <div style={{marginBottom:"2rem"}}>
           <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>Smart Pantry</div>
           <h1 className="discover-title">Your <em style={{fontFamily:"Cormorant Garamond,serif",fontStyle:"italic",color:"var(--terra)"}}>pantry</em></h1>
@@ -2693,8 +2969,9 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
 function PlannerPage({ mealPlan, onRegenerate }: { mealPlan: MealPlan; onRegenerate: () => void }) {
   const days = Object.keys(mealPlan);
   return (
-    <div className="page">
-      <div className="planner-page">
+    <div className="page ambient-page">
+      <AmbientPageBackground variant="planner" />
+      <div className="planner-page page-content-layer">
         <div style={{marginBottom:"1.5rem"}}>
           <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>AI Meal Planner</div>
           <h1 className="discover-title">Weekly <em style={{fontFamily:"Cormorant Garamond,serif",fontStyle:"italic",color:"var(--terra)"}}>meal plan</em></h1>
@@ -2730,8 +3007,9 @@ function PlannerPage({ mealPlan, onRegenerate }: { mealPlan: MealPlan; onRegener
 // ─── SavedPage ────────────────────────────────────────────────────────────────
 function SavedPage({ saved, onRemove }: { saved:Recipe[]; onRemove:(r:Recipe)=>void }) {
   return (
-    <div className="page">
-      <div className="saved-page">
+    <div className="page ambient-page">
+      <AmbientPageBackground variant="saved" />
+      <div className="saved-page page-content-layer">
         <div style={{marginBottom:"2rem"}}>
           <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>Your Collection</div>
           <h1 className="discover-title">Saved <em style={{fontFamily:"Cormorant Garamond,serif",fontStyle:"italic",color:"var(--terra)"}}>recipes</em></h1>
