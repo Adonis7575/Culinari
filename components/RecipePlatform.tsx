@@ -2,6 +2,20 @@
 
 // Culinaria: multi-select dietary needs, textures, expanded cuisines, cook mode, scaling, and surprise.
 import { useState, useRef, useEffect } from "react";
+import Image from "next/image";
+import {
+  ArrowRight,
+  CaretDown,
+  ChefHat,
+  Clock,
+  Diamond,
+  GlobeHemisphereWest,
+  Leaf,
+  Plus,
+  SlidersHorizontal,
+  Sparkle,
+  X,
+} from "@phosphor-icons/react";
 
 // ─── Design System ─────────────────────────────────────────────────────────
 const FONTS = `
@@ -66,16 +80,16 @@ const CSS = `
 
   .nav {
     position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-    background: rgba(250,247,242,0.92);
+    background: rgba(250,247,242,0.96);
     backdrop-filter: blur(16px);
-    border-bottom: 1px solid var(--border);
-    padding: 0 2rem;
+    border-bottom: 1px solid transparent;
+    padding: 0 3.25rem;
     height: 64px;
     display: flex; align-items: center; justify-content: space-between;
   }
   .nav-logo {
     font-family: 'Cormorant Garamond', serif;
-    font-size: 1.6rem; font-weight: 600;
+    font-size: 1.75rem; font-weight: 600;
     color: var(--bark); letter-spacing: -0.02em;
     display: flex; align-items: center; gap: 0.5rem;
     white-space: nowrap;
@@ -83,14 +97,14 @@ const CSS = `
   .nav-logo-mark, .nav-logo-accent { color: var(--terra); }
   .nav-tabs { display: flex; gap: 0.25rem; }
   .nav-tab {
-    padding: 0.4rem 1rem; border-radius: 100px;
+    min-height: 44px; padding: 0.55rem 1.2rem; border-radius: 100px;
     font-size: 0.875rem; font-weight: 500;
     cursor: pointer; border: none; background: transparent;
     color: var(--smoke); transition: all 0.2s;
     font-family: 'DM Sans', sans-serif;
   }
   .nav-tab:hover { background: var(--warm-white); color: var(--bark); }
-  .nav-tab.active { background: var(--bark); color: var(--cream); }
+  .nav-tab.active { background: var(--terra); color: white; }
   .nav-tab:focus-visible { outline-offset: 2px; }
   .nav-badge {
     background: var(--terra); color: white;
@@ -777,6 +791,543 @@ const CSS = `
     .planner-picker-panel { position: fixed; left: 1rem; right: 1rem; top: auto; bottom: 1rem; min-width: 0; }
   }
 
+  /* Editorial generator — selected Product Design direction */
+  .generator-page {
+    position: relative;
+    padding-top: 64px;
+    overflow: hidden;
+    background: var(--cream);
+  }
+  .editorial-hero {
+    position: relative;
+    width: min(100%, 1440px);
+    min-height: 866px;
+    margin: 0 auto;
+    padding: 84px 52px 0;
+  }
+  .editorial-copy {
+    position: relative;
+    z-index: 5;
+    width: min(47vw, 680px);
+  }
+  .editorial-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 30px;
+    color: var(--terra);
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+  }
+  .editorial-eyebrow-line {
+    width: 48px;
+    height: 1px;
+    background: color-mix(in srgb, var(--terra) 52%, transparent);
+  }
+  .editorial-title {
+    max-width: 670px;
+    color: #281814;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: clamp(5rem, 7.95vw, 7.2rem);
+    font-weight: 300;
+    letter-spacing: -0.045em;
+    line-height: 0.89;
+    text-wrap: balance;
+  }
+  .editorial-title em {
+    display: block;
+    margin-top: 0;
+    color: var(--terra);
+    font-size: 1.03em;
+    font-weight: 400;
+    letter-spacing: -0.05em;
+    line-height: 0.74;
+  }
+  .editorial-subtitle {
+    max-width: 520px;
+    margin-top: 16px;
+    color: #765f55;
+    font-size: 1rem;
+    font-weight: 400;
+    line-height: 1.72;
+  }
+  .editorial-visual {
+    position: absolute;
+    z-index: 1;
+    top: 34px;
+    right: -48px;
+    width: 670px;
+    height: 660px;
+  }
+  .editorial-slice {
+    position: absolute;
+    right: 0;
+    width: 610px;
+    overflow: hidden;
+  }
+  .editorial-slice img {
+    position: absolute;
+    right: 0;
+    width: 650px;
+    max-width: none;
+    height: 650px;
+    object-fit: cover;
+  }
+  .editorial-slice-one {
+    top: 0;
+    height: 238px;
+    clip-path: polygon(9% 0, 100% 0, 100% 100%, 0 100%);
+  }
+  .editorial-slice-one img { top: 0; }
+  .editorial-slice-two {
+    top: 248px;
+    height: 220px;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 3% 100%);
+  }
+  .editorial-slice-two img { top: -248px; }
+  .editorial-slice-three {
+    top: 478px;
+    height: 182px;
+    clip-path: polygon(3% 0, 100% 0, 100% 100%, 0 100%);
+  }
+  .editorial-slice-three img { top: -478px; }
+  .ingredient-note {
+    --note-color: var(--sage);
+    position: absolute;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--note-color);
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 1.02rem;
+    font-weight: 600;
+    animation: ingredientFloat 5.8s ease-in-out infinite;
+  }
+  .ingredient-note::after {
+    content: '';
+    order: 1;
+    width: 88px;
+    border-top: 1px dashed color-mix(in srgb, var(--note-color) 68%, transparent);
+  }
+  .ingredient-note img {
+    order: 2;
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    object-fit: cover;
+    mix-blend-mode: multiply;
+  }
+  .ingredient-note-chicken { top: 168px; left: -130px; }
+  .ingredient-note-garlic {
+    --note-color: #9d674b;
+    top: 267px;
+    left: -148px;
+    animation-delay: -1.3s;
+  }
+  .ingredient-note-tomato {
+    --note-color: var(--terra);
+    top: 367px;
+    left: -185px;
+    animation-delay: -2.4s;
+  }
+  .ingredient-note-lemon {
+    --note-color: #c58a00;
+    top: 468px;
+    left: -210px;
+    animation-delay: -3.5s;
+  }
+  @keyframes ingredientFloat {
+    0%, 100% { transform: translate3d(0, 0, 0); }
+    50% { transform: translate3d(0, -7px, 0); }
+  }
+  .editorial-composer {
+    position: absolute;
+    z-index: 10;
+    left: 52px;
+    right: 52px;
+    bottom: 26px;
+    min-height: 178px;
+    padding: 22px 34px 18px;
+    border: 1px solid rgba(92, 69, 58, 0.14);
+    border-radius: 17px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 18px 48px rgba(67, 41, 29, 0.13);
+    backdrop-filter: blur(14px);
+  }
+  .editorial-input-row {
+    display: grid;
+    grid-template-columns: minmax(240px, 1.15fr) minmax(360px, 2fr) minmax(210px, 1.05fr) minmax(164px, 0.8fr);
+    align-items: center;
+    gap: 16px;
+  }
+  .editorial-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .editorial-input-icon {
+    position: absolute;
+    left: 17px;
+    color: #9e8c83;
+    pointer-events: none;
+  }
+  .editorial-input {
+    width: 100%;
+    min-height: 56px;
+    padding: 0 16px 0 48px;
+    border: 1px solid rgba(92, 69, 58, 0.17);
+    border-radius: 10px;
+    background: #fffdf9;
+    color: var(--bark);
+    font-size: 0.92rem;
+    outline: none;
+  }
+  .editorial-input::placeholder { color: #9e8c83; }
+  .editorial-input:focus {
+    border-color: var(--terra);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--terra) 14%, transparent);
+  }
+  .editorial-add {
+    position: absolute;
+    right: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--terra);
+    cursor: pointer;
+  }
+  .editorial-add:hover { background: var(--warm-white); }
+  .editorial-chip-list {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .editorial-chip-list::-webkit-scrollbar { display: none; }
+  .editorial-chip {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 5px;
+    min-height: 42px;
+    padding: 0 8px 0 14px;
+    border: 1px solid rgba(92, 69, 58, 0.17);
+    border-radius: 999px;
+    background: #fffdf9;
+    color: #43302a;
+    font-size: 0.82rem;
+    font-weight: 500;
+  }
+  .editorial-chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #8c746a;
+    cursor: pointer;
+  }
+  .editorial-chip-remove:hover { background: var(--warm-white); color: var(--terra); }
+  .editorial-generate,
+  .editorial-surprise {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 56px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.92rem;
+    font-weight: 600;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  }
+  .editorial-generate {
+    border: 1px solid var(--terra);
+    background: var(--terra);
+    color: white;
+  }
+  .editorial-generate:hover:not(:disabled) {
+    background: #b85224;
+    box-shadow: 0 10px 24px rgba(196, 98, 45, 0.25);
+    transform: translateY(-2px);
+  }
+  .editorial-surprise {
+    border: 1px solid rgba(92, 69, 58, 0.2);
+    background: #fffdf9;
+    color: #4b3730;
+  }
+  .editorial-surprise:hover:not(:disabled) {
+    border-color: var(--gold);
+    background: #fffaf0;
+    transform: translateY(-2px);
+  }
+  .editorial-generate:disabled,
+  .editorial-surprise:disabled { cursor: not-allowed; opacity: 0.58; }
+  .editorial-composer-divider {
+    height: 1px;
+    margin: 17px 0 12px;
+    background: rgba(92, 69, 58, 0.12);
+  }
+  .editorial-preferences {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: center;
+  }
+  .editorial-pref {
+    position: relative;
+    display: grid;
+    grid-template-columns: 30px minmax(72px, auto) minmax(90px, 1fr);
+    align-items: center;
+    gap: 10px;
+    min-height: 48px;
+    padding: 0 34px;
+    color: #46332c;
+  }
+  .editorial-pref + .editorial-pref { border-left: 1px solid rgba(92, 69, 58, 0.12); }
+  .editorial-pref-icon { color: #7d665d; }
+  .editorial-pref-label {
+    color: #765f55;
+    font-size: 0.78rem;
+  }
+  .editorial-pref select {
+    min-height: 44px;
+    padding: 0 30px 0 0;
+    border: 0;
+    background: transparent;
+    color: #382721;
+    font-size: 0.82rem;
+    font-weight: 600;
+    outline: 0;
+    cursor: pointer;
+    appearance: auto;
+  }
+  .editorial-pref select:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 3px;
+  }
+  .editorial-pref-button {
+    grid-template-columns: 30px 1fr 20px;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+  .editorial-pref-copy {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .editorial-pref-value {
+    color: #382721;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+  .editorial-options {
+    width: min(calc(100% - 104px), 1336px);
+    margin: 12px auto 38px;
+    padding: 28px 34px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    animation: fadeUp 0.24s ease;
+  }
+  .editorial-options-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 1.4rem;
+  }
+  .editorial-options-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  .editorial-options .select-field {
+    appearance: auto;
+    background-image: none;
+    background-color: var(--cream);
+  }
+  .editorial-promise {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-height: 76px;
+    padding: 12px 24px 22px;
+    color: #4c3931;
+    font-size: 0.9rem;
+  }
+  .editorial-promise svg { color: var(--terra); }
+  .editorial-footer-art {
+    position: absolute;
+    z-index: 1;
+    top: 890px;
+    left: 0;
+    right: 0;
+    height: 123px;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .editorial-footer-art img {
+    position: absolute;
+    max-width: none;
+    height: auto;
+    mix-blend-mode: multiply;
+  }
+  .editorial-footer-herbs {
+    bottom: -88px;
+    left: 42px;
+    width: 420px;
+  }
+  .editorial-footer-linen {
+    right: -70px;
+    bottom: -95px;
+    width: 520px;
+  }
+  .generator-results {
+    padding: 0 1rem;
+  }
+
+  @media (max-width: 1180px) {
+    .editorial-hero { padding-inline: 34px; }
+    .editorial-copy { width: min(52vw, 610px); }
+    .editorial-title { font-size: clamp(4.2rem, 7vw, 5.4rem); }
+    .editorial-visual { right: -165px; opacity: 0.94; }
+    .ingredient-note { display: none; }
+    .editorial-composer { left: 34px; right: 34px; }
+    .editorial-input-row {
+      grid-template-columns: minmax(210px, 1.2fr) minmax(300px, 1.7fr) minmax(190px, 1fr);
+    }
+    .editorial-surprise { grid-column: 3; }
+    .editorial-generate { grid-column: 3; grid-row: 1; }
+    .editorial-input-row > .editorial-surprise { display: none; }
+    .editorial-pref { padding-inline: 18px; }
+  }
+
+  @media (max-width: 820px) {
+    .generator-page { padding-top: 104px; }
+    .editorial-hero {
+      min-height: 1140px;
+      padding: 54px 24px 0;
+    }
+    .editorial-copy { width: 100%; }
+    .editorial-title {
+      max-width: 620px;
+      font-size: clamp(4rem, 12vw, 5.4rem);
+    }
+    .editorial-subtitle { max-width: 480px; }
+    .editorial-visual {
+      top: 475px;
+      right: -72px;
+      width: 600px;
+      height: 500px;
+    }
+    .editorial-slice { width: 550px; }
+    .editorial-slice img { width: 570px; height: 570px; }
+    .editorial-slice-one { height: 178px; }
+    .editorial-slice-two { top: 188px; height: 150px; }
+    .editorial-slice-two img { top: -188px; }
+    .editorial-slice-three { top: 348px; height: 152px; }
+    .editorial-slice-three img { top: -348px; }
+    .editorial-composer {
+      left: 24px;
+      right: 24px;
+      bottom: 18px;
+      padding: 22px;
+    }
+    .editorial-input-row {
+      grid-template-columns: 1fr 1fr;
+    }
+    .editorial-input-wrap,
+    .editorial-chip-list { grid-column: 1 / -1; }
+    .editorial-generate,
+    .editorial-surprise { grid-column: auto; grid-row: auto; }
+    .editorial-input-row > .editorial-surprise { display: inline-flex; }
+    .editorial-preferences { grid-template-columns: 1fr; }
+    .editorial-pref { padding: 6px 0; }
+    .editorial-pref + .editorial-pref {
+      border-top: 1px solid rgba(92, 69, 58, 0.12);
+      border-left: 0;
+    }
+    .editorial-options {
+      width: calc(100% - 48px);
+      padding: 24px;
+    }
+    .editorial-footer-art { display: none; }
+  }
+
+  @media (max-width: 560px) {
+    .generator-page { padding-top: 104px; }
+    .editorial-hero {
+      display: flex;
+      min-height: 0;
+      flex-direction: column;
+      padding: 42px 18px 0;
+    }
+    .editorial-copy { order: 1; }
+    .editorial-eyebrow { gap: 10px; margin-bottom: 22px; font-size: 0.62rem; }
+    .editorial-eyebrow-line { width: 30px; }
+    .editorial-title { font-size: clamp(3.25rem, 15.5vw, 4.35rem); }
+    .editorial-subtitle { margin-top: 18px; font-size: 0.94rem; }
+    .editorial-visual {
+      position: relative;
+      top: auto;
+      right: auto;
+      order: 3;
+      align-self: center;
+      width: 560px;
+      height: 500px;
+      margin: 28px -85px -76px 0;
+      transform: scale(0.78);
+      transform-origin: top center;
+    }
+    .editorial-composer {
+      position: relative;
+      left: auto;
+      right: auto;
+      bottom: auto;
+      order: 2;
+      width: 100%;
+      margin-top: 28px;
+      padding: 18px 16px;
+    }
+    .editorial-input-row { grid-template-columns: 1fr; }
+    .editorial-input-wrap,
+    .editorial-chip-list,
+    .editorial-generate,
+    .editorial-surprise { grid-column: 1; }
+    .editorial-chip-list { padding-bottom: 4px; }
+    .editorial-generate,
+    .editorial-surprise { width: 100%; }
+    .editorial-options {
+      width: calc(100% - 28px);
+      padding: 20px 16px;
+    }
+    .editorial-options-grid { grid-template-columns: 1fr; }
+    .editorial-promise { align-items: flex-start; text-align: left; }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
       animation-duration: 0.01ms !important;
@@ -1378,7 +1929,9 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, o
   onAddToPlanner: (recipe: Recipe, day: string, meal: MealKey) => void;
   onToast: (msg: string, icon?: string) => void;
 }) {
-  const [ingredients, setIngredients] = useState<string[]>(initialIngredients || []);
+  const [ingredients, setIngredients] = useState<string[]>(
+    initialIngredients?.length ? initialIngredients : ["chicken", "garlic", "tomatoes", "lemon"]
+  );
 
   useEffect(() => {
     if (initialIngredients && initialIngredients.length > 0) setIngredients(initialIngredients);
@@ -1446,6 +1999,254 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, o
     }
     finally { setImproving(false); }
   };
+
+  const useEditorialLayout = true;
+  if (useEditorialLayout) {
+    return (
+      <div className="page generator-page">
+        <section className="editorial-hero" aria-labelledby="generator-heading">
+          <div className="editorial-copy">
+            <div className="editorial-eyebrow">
+              <span className="editorial-eyebrow-line" aria-hidden="true" />
+              <span>AI-Powered Recipe Creation</span>
+              <span className="editorial-eyebrow-line" aria-hidden="true" />
+            </div>
+            <h1 id="generator-heading" className="editorial-title">
+              Turn what<br />
+              you have into<br />
+              something
+              <em>extraordinary.</em>
+            </h1>
+            <p className="editorial-subtitle">
+              Tell us what you have. Our AI generates complete, restaurant-quality recipes tailored to your taste, diet, and time.
+            </p>
+          </div>
+
+          <div className="editorial-visual" role="img" aria-label="Herb roasted chicken with tomatoes, garlic, and lemon">
+            <div className="editorial-slice editorial-slice-one" aria-hidden="true">
+              <Image src="/images/editorial/chicken-hero.png" alt="" width={650} height={650} priority />
+            </div>
+            <div className="editorial-slice editorial-slice-two" aria-hidden="true">
+              <Image src="/images/editorial/chicken-hero.png" alt="" width={650} height={650} priority />
+            </div>
+            <div className="editorial-slice editorial-slice-three" aria-hidden="true">
+              <Image src="/images/editorial/chicken-hero.png" alt="" width={650} height={650} priority />
+            </div>
+
+            <div className="ingredient-note ingredient-note-chicken">
+              <span>chicken</span>
+              <Image src="/images/editorial/basil.png" alt="" width={68} height={68} />
+            </div>
+            <div className="ingredient-note ingredient-note-garlic">
+              <span>garlic</span>
+              <Image src="/images/editorial/garlic.png" alt="" width={68} height={68} />
+            </div>
+            <div className="ingredient-note ingredient-note-tomato">
+              <span>tomatoes</span>
+              <Image src="/images/editorial/tomato.png" alt="" width={68} height={68} />
+            </div>
+            <div className="ingredient-note ingredient-note-lemon">
+              <span>lemon</span>
+              <Image src="/images/editorial/lemon.png" alt="" width={68} height={68} />
+            </div>
+          </div>
+
+          <section className="editorial-composer" aria-label="Recipe generator">
+            <div className="editorial-input-row">
+              <form className="editorial-input-wrap" onSubmit={event=>{event.preventDefault();addIngredient();}}>
+                <Leaf className="editorial-input-icon" size={20} weight="duotone" aria-hidden="true" />
+                <input
+                  className="editorial-input"
+                  aria-label="Add an ingredient"
+                  placeholder="Add an ingredient"
+                  value={input}
+                  onChange={event=>setInput(event.target.value)}
+                  maxLength={80}
+                  autoComplete="off"
+                />
+                <button type="submit" className="editorial-add" aria-label="Add ingredient">
+                  <Plus size={20} weight="bold" aria-hidden="true" />
+                </button>
+              </form>
+
+              <div className="editorial-chip-list" aria-label="Selected ingredients">
+                {ingredients.length===0 && <span className="editorial-pref-label">Add what you have on hand</span>}
+                {ingredients.map(ingredient=>(
+                  <span key={ingredient} className="editorial-chip">
+                    {ingredient}
+                    <button
+                      type="button"
+                      className="editorial-chip-remove"
+                      aria-label={`Remove ${ingredient}`}
+                      onClick={()=>setIngredients(current=>current.filter(item=>item!==ingredient))}
+                    >
+                      <X size={15} weight="bold" aria-hidden="true" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+
+              <button type="button" className="editorial-generate" onClick={generate} disabled={loading||improving}>
+                {loading||improving ? (
+                  <>
+                    <Sparkle size={19} weight="fill" aria-hidden="true" />
+                    <span>{loading?"Creating your recipe...":"Improving recipe..."}</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Generate recipe</span>
+                    <ArrowRight size={19} weight="bold" aria-hidden="true" />
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                className="editorial-surprise"
+                onClick={surprise}
+                disabled={loading||improving}
+                title="Choose a random cuisine while keeping your dietary needs"
+              >
+                <Sparkle size={18} weight="duotone" aria-hidden="true" />
+                <span>Surprise me</span>
+              </button>
+            </div>
+
+            <div className="editorial-composer-divider" aria-hidden="true" />
+
+            <div className="editorial-preferences">
+              <label className="editorial-pref">
+                <GlobeHemisphereWest className="editorial-pref-icon" size={21} weight="duotone" aria-hidden="true" />
+                <span className="editorial-pref-label">Cuisine</span>
+                <select aria-label="Cuisine preference" value={cuisine} onChange={event=>setCuisine(event.target.value)}>
+                  <option>Any Cuisine</option>
+                  {Object.entries(CUISINE_GROUPS).map(([region, list])=>(
+                    <optgroup key={region} label={region}>
+                      {list.map(option=><option key={option}>{option}</option>)}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+
+              <label className="editorial-pref">
+                <Clock className="editorial-pref-icon" size={21} weight="duotone" aria-hidden="true" />
+                <span className="editorial-pref-label">Time</span>
+                <select aria-label="Cooking time preference" value={time} onChange={event=>setTime(event.target.value)}>
+                  {TIMES.map(option=><option key={option}>{option}</option>)}
+                </select>
+              </label>
+
+              <button
+                type="button"
+                className="editorial-pref editorial-pref-button"
+                onClick={()=>setShowDietPanel(current=>!current)}
+                aria-expanded={showDietPanel}
+                aria-controls="generator-preferences"
+              >
+                <SlidersHorizontal className="editorial-pref-icon" size={21} weight="duotone" aria-hidden="true" />
+                <span className="editorial-pref-copy">
+                  <span className="editorial-pref-label">Diet</span>
+                  <span className="editorial-pref-value">{diets.length ? `${diets.length} selected` : "Any"}</span>
+                </span>
+                <CaretDown
+                  size={17}
+                  weight="bold"
+                  aria-hidden="true"
+                  style={{transform:showDietPanel?"rotate(180deg)":"none",transition:"transform 0.2s ease"}}
+                />
+              </button>
+            </div>
+          </section>
+        </section>
+
+        {showDietPanel && (
+          <section id="generator-preferences" className="editorial-options" aria-labelledby="generator-preferences-title">
+            <h2 id="generator-preferences-title" className="editorial-options-title">
+              <SlidersHorizontal size={22} weight="duotone" aria-hidden="true" />
+              Fine-tune your recipe
+            </h2>
+            <div className="editorial-options-grid">
+              <select className="select-field" aria-label="Texture and consistency preference" value={texture} onChange={event=>setTexture(event.target.value)}>
+                {TEXTURES.map(option=><option key={option}>{option}</option>)}
+              </select>
+              <select className="select-field" aria-label="Skill level preference" value={skill} onChange={event=>setSkill(event.target.value)}>
+                {SKILLS.map(option=><option key={option}>{option}</option>)}
+              </select>
+              <select className="select-field" aria-label="Calorie preference" value={calories} onChange={event=>setCalories(event.target.value)}>
+                {CALORIE_OPTIONS.map(option=><option key={option}>{option}</option>)}
+              </select>
+            </div>
+
+            {texture !== "Any Texture" && texture !== "Regular" && (
+              <div className="texture-note">{texture} mode keeps the meal varied, complete, and appropriate for the requested texture.</div>
+            )}
+
+            <div className="diet-panel">
+              {DIET_GROUPS.map(group=>(
+                <div key={group.label} className="diet-group">
+                  <div className="diet-group-label">{group.label}</div>
+                  <div className="improve-chips">
+                    {group.options.map(diet=>(
+                      <button
+                        type="button"
+                        key={diet}
+                        className={`diet-chip${diets.includes(diet)?" active":""}`}
+                        onClick={()=>toggleDiet(diet)}
+                        aria-pressed={diets.includes(diet)}
+                      >
+                        {diet}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <div className="diet-group">
+                <div className="diet-group-label">Anything else?</div>
+                <textarea
+                  className="ingredient-input diet-custom"
+                  aria-label="Custom dietary restrictions and notes"
+                  placeholder="Add allergies, texture needs, equipment limits, or other cooking notes."
+                  value={customDiet}
+                  onChange={event=>setCustomDiet(event.target.value)}
+                  maxLength={500}
+                  rows={3}
+                />
+              </div>
+              <p className="diet-disclaimer">
+                Health and allergy filters guide recipe generation but do not replace medical advice. Verify packaged ingredients and cross-contamination risks.
+              </p>
+            </div>
+          </section>
+        )}
+
+        <div className="editorial-footer-art" aria-hidden="true">
+          <Image className="editorial-footer-herbs" src="/images/editorial/herb-scatter.png" alt="" width={420} height={280} />
+          <Image className="editorial-footer-linen" src="/images/editorial/linen.png" alt="" width={520} height={360} />
+        </div>
+
+        <div className="editorial-promise">
+          <ChefHat size={23} weight="duotone" aria-hidden="true" />
+          <span>From your ingredients to a complete recipe—instantly. No more meal-planning guesswork.</span>
+        </div>
+
+        {error && <div className="error-message" role="alert" style={{maxWidth:"860px",margin:"0 auto 2rem"}}>{error}</div>}
+        {loading && (
+          <div className="loading-state generator-results" role="status" aria-live="polite">
+            <div className="loading-spinner"/>
+            <div>
+              <div className="loading-label">Crafting your recipe...</div>
+              <div className="loading-sublabel">Our AI is combining flavors, calculating nutrition, and perfecting instructions.</div>
+            </div>
+          </div>
+        )}
+        {recipe && !loading && (
+          <div className="generator-results">
+            <RecipeOutput recipe={recipe} saved={savedIds.has(recipe.name)} onSave={()=>onSave(recipe)} onImprove={improve} onAddToPlanner={(day,meal)=>onAddToPlanner(recipe,day,meal)} onToast={onToast}/>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="page">
@@ -2015,8 +2816,8 @@ export default function RecipePlatform() {
         <a className="skip-link" href="#main-content">Skip to main content</a>
         <nav className="nav" aria-label="Primary">
           <div className="nav-logo">
-            <span className="nav-logo-mark" style={{fontSize:"1.2rem"}} aria-hidden="true">◈</span>
-            <span>Culinari<span className="nav-logo-accent">a</span></span>
+            <Diamond className="nav-logo-mark" size={19} weight="duotone" aria-hidden="true" />
+            <span>Culinaria</span>
           </div>
           <div className="nav-tabs">
             {[{id:"generate",label:"Generate"},{id:"discover",label:"Discover"},{id:"pantry",label:"Pantry"},{id:"planner",label:"Planner"},{id:"saved",label:"Saved",badge:saved.length||null}].map(t=>(
