@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const REQUEST_TIMEOUT_MS = 45_000;
 const MAX_PROMPT_CHARS = 12_000;
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
+const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5";
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
