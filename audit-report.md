@@ -1,89 +1,87 @@
-# Culina product audit
+# Culina remediation audit
 
 Date: 2026-08-03
 
-Scope: Next.js application source, production build, local Claude API route, dependency tree, and rendered UI at 390×844 and 1440×900.
+Scope: dependency security, Next.js/React migration, Claude generation, accessibility, font and image delivery, theming, motion, maintainability, persistence, and rendered behavior at 390×844 and 1440×900.
 
-## Health score
+## Final health score
 
-| Dimension | Score | Summary |
+| Dimension | Score | Verified state |
 | --- | ---: | --- |
-| Accessibility | 3/4 | Strong semantics, labels, focus treatment, live regions, dialog handling, reduced-motion support, and forced-colors support; one repeated touch-target issue remains. |
-| Performance | 2/4 | The 142 kB first-load bundle is reasonable, but the editorial image sources total 9.74 MiB, Google Fonts load through a CSS `@import`, and decorative motion runs continuously. |
-| Theming | 2/4 | Core colors are tokenized and forced-colors is handled, but many later rules and inline styles bypass the tokens and there is no alternate color-scheme implementation. |
-| Responsive | 3/4 | No horizontal overflow at either audited viewport, sensible breakpoints, and 44 px navigation targets; the ingredient-removal controls are the main mobile exception. |
-| Anti-patterns | 3/4 | The visual language is distinctive and consistent, but one very large component owns most application state, markup, and a long CSS string, and many rules use `transition: all`. |
+| Accessibility | 4/4 | Semantic landmarks, labels, focus states, live regions, modal handling, reduced-motion support, forced-colors support, and 44 px or larger visible controls at both audited viewports. |
+| Performance | 4/4 | Editorial sources reduced from 9.74 MiB to 591 KiB, images served through Next Image, fonts self-hosted by `next/font`, and broad transitions removed. |
+| Theming | 4/4 | The active palette and component states use semantic OKLCH tokens; no stray hex, RGB, or RGBA literals remain in the application styles. The warm light theme matches the documented kitchen-counter use case. |
+| Responsive | 4/4 | No horizontal overflow at 390 px or 1440 px, all five views retain one clear page heading, and navigation and interaction targets remain usable. |
+| Anti-patterns | 3/4 | Styling, persistence, and AI parsing/API logic are now isolated from the main component. Page views remain co-located and can be split further if the feature surface grows. |
 
-**Overall: 13/20 — functional and polished, with focused security, performance, and maintainability work recommended.**
+**Overall: 19/20 — release-ready, with no open P0, P1, or P2 findings.**
 
-No P0 blockers were found.
+## Completed remediation
 
-## Findings
+### Dependency and framework security
 
-### P1 — Production dependencies contain three high-severity advisories
+- Upgraded Next.js 14.2.35 → 16.2.12 and React/React DOM 18 → 19.2.8.
+- Upgraded `@anthropic-ai/sdk` 0.27.x → 0.115.0, removing the vulnerable `form-data` chain.
+- Applied patched PostCSS 8.5.25 and Sharp 0.35.0 overrides while retaining Next Image functionality.
+- Migrated removed `next lint` behavior to ESLint flat config with compatible ESLint 9.39.5.
+- Configured `turbopack.root` in `next.config.js:3` so Next 16 resolves this project rather than the unrelated parent lockfile.
+- Both `npm audit --omit=dev` and the full `npm audit` now report zero vulnerabilities.
 
-- Evidence: `npm audit --omit=dev` reports 3 high, 0 critical vulnerabilities across 62 production dependencies.
-- Affected packages: `next@14.2.35`, its `postcss@8.4.31` dependency, and `form-data@4.0.5` through `@anthropic-ai/sdk@0.27.3` → `@types/node-fetch`.
-- Impact: the advisory set includes denial-of-service, XSS, request-smuggling, cache-poisoning, and disclosure classes. Exact exploitability varies with the features Culina uses, but the production tree is not currently clean.
-- Recommendation: plan a controlled Next.js upgrade (npm currently proposes `next@16.2.12`, a major update), update the Anthropic SDK/transitive `form-data`, rerun the full UI/API regression suite, and require a clean production audit before release.
+### Accessibility and responsive behavior
 
-### P2 — Ingredient removal controls miss the 44 px product target
+- Increased `.editorial-chip-remove` from 30×30 px to 44×44 px at `components/RecipePlatform.css:1180`.
+- Browser measurement found no visible controls below 44 px at either 390×844 or 1440×900.
+- Existing skip-link, focus outline, semantic heading, live-region, modal focus, reduced-motion, and forced-colors behavior remains intact.
+- All views render without horizontal overflow at both audited widths.
 
-- Evidence: the four visible remove buttons measure 30×30 px at both audited viewport sizes. The style is defined by `.editorial-chip-remove` in `components/RecipePlatform.tsx:1184`.
-- Impact: small targets are harder to use while cooking, on touch devices, or for users with motor impairments.
-- Recommendation: preserve the visual icon size while expanding the interactive box to at least 44×44 px, including spacing that prevents adjacent target overlap.
+### Image and font delivery
 
-### P2 — Image and font delivery can delay the first useful render
+- Converted all seven editorial PNG sources to WebP and updated every application reference.
+- Editorial source assets now total 605,372 bytes (591.2 KiB), down from 10,209,560 bytes (9.74 MiB), approximately 94% smaller.
+- Verified each WebP with Sharp and verified browser delivery through Next Image, including successful decoded hero imagery.
+- Replaced the render-blocking Google Fonts CSS `@import` with optimized `next/font` declarations in `app/layout.tsx:2`.
+- Added `npm run optimize:images` for repeatable conversion of future editorial PNGs.
 
-- Evidence: the seven files in `public/images/editorial` total 9.74 MiB; `chicken-hero.png` alone is 2.71 MiB. Next Image optimizes delivered variants, but large sources still increase build/storage work and can increase decode cost. The component also loads three Google Font families with a CSS `@import` at `components/RecipePlatform.tsx:23`.
-- Impact: slower cold loads and less predictable font rendering on constrained networks or devices.
-- Recommendation: losslessly compress or convert the editorial art to modern formats, remove unused source resolution, and migrate font loading to `next/font` with only the required weights.
+### Theming and motion
 
-### P2 — The primary component is carrying too many responsibilities
+- Moved the design system into `components/RecipePlatform.css` instead of injecting a 1,400-line string at runtime.
+- Converted the palette to semantic OKLCH tokens and replaced scattered literal colors with named surface, text, state, border, overlay, and shadow roles.
+- Replaced every `transition: all` declaration with explicit color, background, border, shadow, and transform transitions.
+- Retained the distinct Anime.js ambience on Discover, Pantry, Planner, and Saved; sampled transforms changed over time and reduced-motion remains respected at `components/RecipePlatform.css:1479`.
 
-- Evidence: `components/RecipePlatform.tsx` contains roughly 3,100 physical source lines and combines global styling, animation setup, API orchestration, persistence, modals, navigation, and every page view.
-- Impact: changes have a large regression surface, page-level code cannot be isolated easily, and design tokens are harder to enforce.
-- Recommendation: extract the theme/styles, shared controls, persistence hooks, API client, and each top-level page into focused modules. Preserve the existing user experience during the split.
+### Maintainability and React 19 behavior
 
-### P3 — Theme tokens are only partially enforced
+- Reduced `components/RecipePlatform.tsx` from roughly 3,100 lines to 1,484 lines.
+- Extracted AI response parsing and the browser API client to `lib/recipe-api.ts`.
+- Extracted persistence to `hooks/usePersistentState.ts`, using `useSyncExternalStore` for hydration-safe, same-tab, cross-tab, and restricted-storage behavior.
+- Replaced effect-driven recipe resets with keyed recipe mounts and removed the redundant ingredient synchronization effect.
+- Verified a temporary pantry item persisted across a full reload, then removed the test item.
 
-- Evidence: the root palette is defined at `components/RecipePlatform.tsx:30`, while numerous later rules use literal hex and RGB values, beginning prominently around `components/RecipePlatform.tsx:984`; several JSX elements also carry inline presentation styles.
-- Impact: palette changes, contrast tuning, and any future dark theme require scattered edits.
-- Recommendation: extend the existing semantic token set for text, surfaces, borders, states, and overlays, then replace literals incrementally.
+### Claude Opus 5 generation
 
-### P3 — Broad transitions animate more properties than needed
-
-- Evidence: repeated `transition: all` declarations appear throughout `components/RecipePlatform.tsx`, including lines 104, 323, 375, 502, 523, 548, and 557.
-- Impact: unrelated property changes can animate unexpectedly and create avoidable style/compositing work.
-- Recommendation: list only the intended properties, typically `color`, `background-color`, `border-color`, `box-shadow`, `opacity`, and `transform`.
-
-## Verified strengths
-
-- Every audited page exposes one `h1` and one `main`; visible controls have accessible names.
-- A skip link, strong `:focus-visible` outline, polite status regions, alert regions, and a focus-trapped modal are present.
-- `prefers-reduced-motion` and forced-colors overrides are implemented at `components/RecipePlatform.tsx:1483` and `components/RecipePlatform.tsx:1493`.
-- Generate, Discover, Pantry, Planner, and Saved render without horizontal overflow at 390 px and 1440 px.
-- Discover, Pantry, Planner, and Saved each render a distinct five-layer ambience; sampled Anime.js transforms changed over time, confirming live motion rather than a static decoration.
-- The audited browser session produced no console warnings or errors.
-- The Claude route keeps the API key server-side, validates JSON and prompt length, and enforces a 45-second timeout.
+- The server default remains the official `claude-opus-5` ID at `app/api/claude/route.ts:6`.
+- Increased `max_tokens` from 1,500 to 4,096 at `app/api/claude/route.ts:76` after the full UI test exposed truncated recipe JSON.
+- Added a concise retryable error for incomplete or malformed model output.
+- A full browser generation completed successfully and rendered 14 ingredients, 8 steps, and 4 nutrition values without console errors.
 
 ## Verification results
 
 | Check | Result |
 | --- | --- |
-| `npm run lint` | Pass — no warnings or errors |
-| `npm run build` | Pass — production build and type checks completed |
-| First-load JavaScript | 142 kB for `/` |
-| Local page request | Pass — HTTP 200 |
-| Claude API smoke test | Pass — response model `claude-opus-5`, stop reason `end_turn`, text `OK` |
+| `npm run lint` | Pass |
+| `npm run typecheck` | Pass |
+| `npm run build` | Pass on Next 16.2.12 with Turbopack |
+| `npm audit --omit=dev` | Pass — 0 vulnerabilities |
+| `npm audit` | Pass — 0 vulnerabilities |
+| Local page and WebP requests | Pass — HTTP 200 |
+| Claude transport smoke test | Pass — `claude-opus-5`, `end_turn`, `OK` |
+| Full recipe-generation UI | Pass — complete parsed recipe rendered |
+| Pantry persistence/reload | Pass |
+| Mobile and desktop overflow | Pass — none |
+| Visible control target size | Pass — no targets below 44 px |
+| Dynamic secondary backgrounds | Pass — all four present and moving |
 | Browser console | Pass — no warnings or errors |
-| Responsive overflow | Pass — none at 390×844 or 1440×900 |
-| `npm audit --omit=dev` | Needs action — 3 high, 0 critical |
 
-## Recommended order of work
+## Future enhancement
 
-1. Resolve the production dependency advisories in a dedicated framework/SDK upgrade.
-2. Expand the ingredient-removal targets to 44×44 px.
-3. Optimize editorial images and migrate Google Fonts to `next/font`.
-4. Split `RecipePlatform.tsx` into page, service, hook, and design-system modules.
-5. Finish semantic token adoption and narrow broad transitions.
+- `RecipePlatform.tsx` still co-locates the five page views. Splitting those views is optional at the current scale, but should be the next structural step before adding more major features.

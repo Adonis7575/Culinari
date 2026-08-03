@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
     const response = await withTimeout(
       client.messages.create({
         model: MODEL,
-        max_tokens: 1500,
+        max_tokens: 4096,
         messages: [{ role: "user", content: prompt }],
       }),
       REQUEST_TIMEOUT_MS
