@@ -27,13 +27,31 @@ export const metadata: Metadata = {
   description: "Generate, discover, and customize recipes with AI",
 };
 
+const themeInitScript = `
+  (() => {
+    try {
+      const savedTheme = JSON.parse(localStorage.getItem("culina.theme.v1") ?? "null");
+      const theme = savedTheme === "dark" ? "dark" : "light";
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.style.colorScheme = theme;
+    } catch {
+      document.documentElement.dataset.theme = "light";
+      document.documentElement.style.colorScheme = "light";
+    }
+  })();
+`;
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <meta name="color-scheme" content="light dark" />
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body className={`${dmSans.variable} ${cormorant.variable} ${spaceMono.variable}`}>
         {children}
       </body>

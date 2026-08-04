@@ -12,9 +12,11 @@ import {
   Diamond,
   GlobeHemisphereWest,
   Leaf,
+  MoonStars,
   Plus,
   SlidersHorizontal,
   Sparkle,
+  Sun,
   X,
 } from "@phosphor-icons/react";
 import { usePersistentState } from "../hooks/usePersistentState";
@@ -110,8 +112,10 @@ const STORAGE_KEYS = {
   saved: "culina.savedRecipes.v1",
   pantry: "culina.pantryItems.v1",
   mealPlan: "culina.mealPlan.v1",
+  theme: "culina.theme.v1",
 };
 const EMPTY_RECIPES: Recipe[] = [];
+type ThemeMode = "light" | "dark";
 
 function textureInstruction(texture: string) {
   if (!texture || texture === "Any Texture" || texture === "Regular") return "";
@@ -1417,12 +1421,19 @@ function SavedPage({ saved, onRemove }: { saved:Recipe[]; onRemove:(r:Recipe)=>v
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function RecipePlatform() {
   const [tab, setTab] = useState("generate");
+  const [storedTheme, setTheme] = usePersistentState<ThemeMode>(STORAGE_KEYS.theme, "light");
   const [saved, setSaved] = usePersistentState<Recipe[]>(STORAGE_KEYS.saved, EMPTY_RECIPES);
   const [toasts, setToasts] = useState<Array<{id:number;msg:string;icon:string}>>([]);
   const [pantryItems, setPantryItems] = usePersistentState<PantryItem[]>(STORAGE_KEYS.pantry, PANTRY_ITEMS);
   const [pendingIngredients, setPendingIngredients] = useState<string[]>([]);
   const [mealPlan, setMealPlan] = usePersistentState<MealPlan>(STORAGE_KEYS.mealPlan, MEAL_PLAN);
   const toastRef = useRef(0);
+  const theme: ThemeMode = storedTheme === "dark" ? "dark" : "light";
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+  }, [theme]);
 
   const addToast = (msg: string, icon = "✓") => {
     const id = ++toastRef.current;
@@ -1462,12 +1473,26 @@ export default function RecipePlatform() {
             <Diamond className="nav-logo-mark" size={19} weight="duotone" aria-hidden="true" />
             <span>Culinaria</span>
           </div>
-          <div className="nav-tabs">
-            {[{id:"generate",label:"Generate"},{id:"discover",label:"Discover"},{id:"pantry",label:"Pantry"},{id:"planner",label:"Planner"},{id:"saved",label:"Saved",badge:saved.length||null}].map(t=>(
-              <button type="button" key={t.id} aria-current={tab===t.id?"page":undefined} className={`nav-tab${tab===t.id?" active":""}`} onClick={()=>setTab(t.id)}>
-                {t.label}{t.badge?<span className="nav-badge">{t.badge}</span>:null}
-              </button>
-            ))}
+          <div className="nav-actions">
+            <div className="nav-tabs">
+              {[{id:"generate",label:"Generate"},{id:"discover",label:"Discover"},{id:"pantry",label:"Pantry"},{id:"planner",label:"Planner"},{id:"saved",label:"Saved",badge:saved.length||null}].map(t=>(
+                <button type="button" key={t.id} aria-current={tab===t.id?"page":undefined} className={`nav-tab${tab===t.id?" active":""}`} onClick={()=>setTab(t.id)}>
+                  {t.label}{t.badge?<span className="nav-badge">{t.badge}</span>:null}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="theme-toggle"
+              aria-label="Night mode"
+              aria-pressed={theme === "dark"}
+              title={theme === "dark" ? "Switch to day mode" : "Switch to night mode"}
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            >
+              {theme === "dark"
+                ? <Sun size={19} weight="duotone" aria-hidden="true" />
+                : <MoonStars size={19} weight="duotone" aria-hidden="true" />}
+            </button>
           </div>
         </nav>
         <main id="main-content" tabIndex={-1}>
