@@ -1374,12 +1374,46 @@
     cursor: pointer;
   }
   .editorial-add:hover { background: var(--warm-white); }
+  .editorial-chip-wheel {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 6px;
+  }
+  .editorial-wheel-control {
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-medium);
+    border-radius: 50%;
+    background: var(--surface-soft);
+    color: var(--terra);
+    cursor: pointer;
+    transition: color 0.18s ease-out, background-color 0.18s ease-out, border-color 0.18s ease-out, transform 0.18s ease-out;
+  }
+  .editorial-wheel-control:hover:not(:disabled) {
+    border-color: var(--terra);
+    background: var(--warm-white);
+    transform: translateY(-1px);
+  }
+  .editorial-wheel-control:disabled {
+    color: var(--text-faint);
+    cursor: default;
+    opacity: 0.45;
+  }
   .editorial-chip-list {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-height: 56px;
     min-width: 0;
     overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-behavior: smooth;
+    scroll-snap-type: x proximity;
     scrollbar-width: none;
   }
   .editorial-chip-list::-webkit-scrollbar { display: none; }
@@ -1396,6 +1430,7 @@
     color: var(--text-strong);
     font-size: 0.82rem;
     font-weight: 500;
+    scroll-snap-align: start;
   }
   .editorial-chip-remove {
     display: inline-flex;
@@ -1628,7 +1663,7 @@
       grid-template-columns: 1fr 1fr;
     }
     .editorial-input-wrap,
-    .editorial-chip-list { grid-column: 1 / -1; }
+    .editorial-chip-wheel { grid-column: 1 / -1; }
     .editorial-generate,
     .editorial-surprise { grid-column: auto; grid-row: auto; }
     .editorial-input-row > .editorial-surprise { display: inline-flex; }
@@ -1682,10 +1717,11 @@
     }
     .editorial-input-row { grid-template-columns: 1fr; }
     .editorial-input-wrap,
-    .editorial-chip-list,
+    .editorial-chip-wheel,
     .editorial-generate,
     .editorial-surprise { grid-column: 1; }
     .editorial-chip-list { padding-bottom: 4px; }
+    .editorial-chip-wheel { gap: 4px; }
     .editorial-generate,
     .editorial-surprise { width: 100%; }
     .editorial-options {

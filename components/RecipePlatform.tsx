@@ -1,12 +1,14 @@
 "use client";
 
 // Culinaria: multi-select dietary needs, textures, expanded cuisines, cook mode, scaling, and surprise.
-import { useState, useRef, useEffect } from "react";
+import { useCallback, useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { animate, createScope, stagger } from "animejs";
 import {
   ArrowRight,
   CaretDown,
+  CaretLeft,
+  CaretRight,
   ChatCircleDots,
   ChefHat,
   Clock,
@@ -459,6 +461,126 @@ function FeedbackWidget({ currentView }: { currentView: string }) {
   );
 }
 
+function IngredientWheel({
+  ingredients,
+  onRemove,
+}: {
+  ingredients: string[];
+  onRemove: (ingredient: string) => void;
+}) {
+  const railRef = useRef<HTMLDivElement>(null);
+  const previousCountRef = useRef(ingredients.length);
+  const [scrollState, setScrollState] = useState({ backward: false, forward: false });
+
+  const syncScrollState = useCallback(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+    const maxScroll = Math.max(0, rail.scrollWidth - rail.clientWidth);
+    setScrollState({
+      backward: rail.scrollLeft > 2,
+      forward: rail.scrollLeft < maxScroll - 2,
+    });
+  }, []);
+
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+
+    syncScrollState();
+    const resizeObserver = new ResizeObserver(syncScrollState);
+    resizeObserver.observe(rail);
+    rail.addEventListener("scroll", syncScrollState, { passive: true });
+    return () => {
+      resizeObserver.disconnect();
+      rail.removeEventListener("scroll", syncScrollState);
+    };
+  }, [ingredients.length, syncScrollState]);
+
+  useEffect(() => {
+    const previousCount = previousCountRef.current;
+    previousCountRef.current = ingredients.length;
+    if (ingredients.length <= previousCount) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      railRef.current?.scrollTo({ left: railRef.current.scrollWidth, behavior: "smooth" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [ingredients.length]);
+
+  const scrollByStep = (direction: -1 | 1) => {
+    const rail = railRef.current;
+    if (!rail) return;
+    rail.scrollBy({ left: direction * Math.max(160, rail.clientWidth * 0.72), behavior: "smooth" });
+  };
+
+  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const rail = railRef.current;
+    if (!rail || rail.scrollWidth <= rail.clientWidth) return;
+
+    const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+    const maxScroll = rail.scrollWidth - rail.clientWidth;
+    const canMove = delta > 0 ? rail.scrollLeft < maxScroll - 1 : rail.scrollLeft > 1;
+    if (!delta || !canMove) return;
+
+    event.preventDefault();
+    rail.scrollLeft += delta;
+  };
+
+  const handleRailKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    scrollByStep(event.key === "ArrowLeft" ? -1 : 1);
+  };
+
+  return (
+    <div className="editorial-chip-wheel">
+      <button
+        type="button"
+        className="editorial-wheel-control"
+        aria-label="Scroll ingredients backward"
+        disabled={!scrollState.backward}
+        onClick={() => scrollByStep(-1)}
+      >
+        <CaretLeft size={17} weight="bold" aria-hidden="true" />
+      </button>
+      <div
+        ref={railRef}
+        className="editorial-chip-list"
+        role="list"
+        tabIndex={0}
+        aria-label="Selected ingredients. Use the mouse wheel or arrow keys to scroll."
+        title="Use the mouse wheel or arrows to scroll ingredients"
+        onWheel={handleWheel}
+        onKeyDown={handleRailKeyDown}
+      >
+        {ingredients.length === 0 && <span className="editorial-pref-label">Add what you have on hand</span>}
+        {ingredients.map(ingredient => (
+          <span key={ingredient} className="editorial-chip" role="listitem">
+            {ingredient}
+            <button
+              type="button"
+              className="editorial-chip-remove"
+              aria-label={`Remove ${ingredient}`}
+              onClick={() => onRemove(ingredient)}
+            >
+              <X size={15} weight="bold" aria-hidden="true" />
+            </button>
+          </span>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="editorial-wheel-control"
+        aria-label="Scroll ingredients forward"
+        disabled={!scrollState.forward}
+        onClick={() => scrollByStep(1)}
+      >
+        <CaretRight size={17} weight="bold" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
 // ─── RecipeOutput ─────────────────────────────────────────────────────────────
 function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToast }: {
   recipe: Recipe; saved: boolean;
@@ -785,22 +907,10 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, o
                 </button>
               </form>
 
-              <div className="editorial-chip-list" aria-label="Selected ingredients">
-                {ingredients.length===0 && <span className="editorial-pref-label">Add what you have on hand</span>}
-                {ingredients.map(ingredient=>(
-                  <span key={ingredient} className="editorial-chip">
-                    {ingredient}
-                    <button
-                      type="button"
-                      className="editorial-chip-remove"
-                      aria-label={`Remove ${ingredient}`}
-                      onClick={()=>setIngredients(current=>current.filter(item=>item!==ingredient))}
-                    >
-                      <X size={15} weight="bold" aria-hidden="true" />
-                    </button>
-                  </span>
-                ))}
-              </div>
+              <IngredientWheel
+                ingredients={ingredients}
+                onRemove={ingredient=>setIngredients(current=>current.filter(item=>item!==ingredient))}
+              />
 
               <button type="button" className="editorial-generate" onClick={generate} disabled={loading||improving}>
                 {loading||improving ? (
