@@ -7,12 +7,14 @@ import { animate, createScope, stagger } from "animejs";
 import {
   ArrowRight,
   CaretDown,
+  ChatCircleDots,
   ChefHat,
   Clock,
   Diamond,
   GlobeHemisphereWest,
   Leaf,
   MoonStars,
+  PaperPlaneTilt,
   Plus,
   SlidersHorizontal,
   Sparkle,
@@ -116,6 +118,7 @@ const STORAGE_KEYS = {
 };
 const EMPTY_RECIPES: Recipe[] = [];
 type ThemeMode = "light" | "dark";
+type FeedbackStatus = "idle" | "sending" | "sent" | "error";
 
 function textureInstruction(texture: string) {
   if (!texture || texture === "Any Texture" || texture === "Regular") return "";
@@ -263,6 +266,197 @@ function trapDialogFocus(event: React.KeyboardEvent<HTMLDivElement>) {
     event.preventDefault();
     first.focus();
   }
+}
+
+// ─── Private feedback ────────────────────────────────────────────────────────
+function FeedbackWidget({ currentView }: { currentView: string }) {
+  const [open, setOpen] = useState(false);
+  const [message, setMessage] = useState("");
+  const [email, setEmail] = useState("");
+  const [website, setWebsite] = useState("");
+  const [status, setStatus] = useState<FeedbackStatus>("idle");
+  const [error, setError] = useState("");
+  const widgetRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const messageRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const focusTimer = window.setTimeout(() => messageRef.current?.focus(), 0);
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!widgetRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedMessage = message.trim();
+    if (trimmedMessage.length < 3) {
+      setStatus("error");
+      setError("Please share at least a few words.");
+      messageRef.current?.focus();
+      return;
+    }
+
+    setStatus("sending");
+    setError("");
+
+    try {
+      const response = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: trimmedMessage,
+          email: email.trim(),
+          website,
+          page: currentView,
+          url: window.location.href,
+        }),
+      });
+      const data: unknown = await response.json().catch(() => null);
+      const detail = data && typeof data === "object" && "error" in data && typeof data.error === "string"
+        ? data.error
+        : "Feedback could not be sent. Please try again.";
+
+      if (!response.ok) throw new Error(detail);
+
+      setMessage("");
+      setEmail("");
+      setWebsite("");
+      setStatus("sent");
+    } catch (submitError: unknown) {
+      setStatus("error");
+      setError(submitError instanceof Error ? submitError.message : "Feedback could not be sent. Please try again.");
+    }
+  };
+
+  const toggleOpen = () => {
+    setOpen(previous => {
+      if (!previous) {
+        setStatus("idle");
+        setError("");
+      }
+      return !previous;
+    });
+  };
+
+  return (
+    <div className="feedback-widget" ref={widgetRef}>
+      {open && (
+        <section
+          id="private-feedback-panel"
+          className="feedback-panel"
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby="feedback-title"
+        >
+          <div className="feedback-panel-head">
+            <div>
+              <p className="feedback-kicker">Private note</p>
+              <h2 id="feedback-title">Share feedback</h2>
+            </div>
+            <button
+              type="button"
+              className="feedback-close"
+              aria-label="Close feedback form"
+              onClick={() => {
+                setOpen(false);
+                triggerRef.current?.focus();
+              }}
+            >
+              <X size={18} weight="bold" aria-hidden="true" />
+            </button>
+          </div>
+
+          {status === "sent" ? (
+            <div className="feedback-success" role="status">
+              <span aria-hidden="true">✓</span>
+              <div>
+                <strong>Thank you.</strong>
+                <p>Your feedback was sent privately.</p>
+              </div>
+              <button type="button" className="feedback-secondary" onClick={() => setStatus("idle")}>
+                Send another note
+              </button>
+            </div>
+          ) : (
+            <form className="feedback-form" onSubmit={handleSubmit}>
+              <label htmlFor="feedback-message">What could be better?</label>
+              <textarea
+                ref={messageRef}
+                id="feedback-message"
+                value={message}
+                minLength={3}
+                maxLength={1600}
+                required
+                placeholder="A quick thought, bug, or idea..."
+                onChange={event => {
+                  setMessage(event.target.value);
+                  if (status === "error") setStatus("idle");
+                }}
+              />
+              <div className="feedback-field-row">
+                <label htmlFor="feedback-email">Email <span>(optional, for a reply)</span></label>
+                <input
+                  id="feedback-email"
+                  type="email"
+                  value={email}
+                  maxLength={254}
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  onChange={event => setEmail(event.target.value)}
+                />
+              </div>
+              <div className="feedback-honeypot" aria-hidden="true">
+                <label htmlFor="feedback-website">Website</label>
+                <input
+                  id="feedback-website"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  value={website}
+                  onChange={event => setWebsite(event.target.value)}
+                />
+              </div>
+              {status === "error" && <p className="feedback-error" role="alert">{error}</p>}
+              <div className="feedback-form-foot">
+                <p>Your note goes only to the Culinaria owner.</p>
+                <button type="submit" className="feedback-submit" disabled={status === "sending"}>
+                  <PaperPlaneTilt size={17} weight="fill" aria-hidden="true" />
+                  {status === "sending" ? "Sending..." : "Send privately"}
+                </button>
+              </div>
+            </form>
+          )}
+        </section>
+      )}
+
+      <button
+        ref={triggerRef}
+        type="button"
+        className="feedback-trigger"
+        aria-expanded={open}
+        aria-controls="private-feedback-panel"
+        onClick={toggleOpen}
+      >
+        <ChatCircleDots size={20} weight="duotone" aria-hidden="true" />
+        <span>Feedback</span>
+      </button>
+    </div>
+  );
 }
 
 // ─── RecipeOutput ─────────────────────────────────────────────────────────────
@@ -1502,6 +1696,7 @@ export default function RecipePlatform() {
           {tab==="planner" && <PlannerPage mealPlan={mealPlan} onRegenerate={handleRegeneratePlan}/>}
           {tab==="saved" && <SavedPage saved={saved} onRemove={handleSave}/>}
         </main>
+        <FeedbackWidget currentView={tab} />
         <Toast toasts={toasts}/>
       </div>
     </>

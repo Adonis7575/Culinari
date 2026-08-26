@@ -9,12 +9,18 @@ Generate, discover, and customize recipes with AI.
 npm install
 ```
 
-### 2. Add your API key
+### 2. Add your API keys
 Copy the example env file and paste your key:
 ```bash
 cp .env.local.example .env.local
 ```
-Then open `.env.local` and replace `sk-ant-PASTE_YOUR_KEY_HERE` with your real key from https://console.anthropic.com/api-keys
+Then open `.env.local` and add:
+
+- `ANTHROPIC_API_KEY`: your key from https://console.anthropic.com/api-keys
+- `RESEND_API_KEY`: your key from https://resend.com/api-keys
+- `FEEDBACK_TO_EMAIL`: the private inbox that should receive feedback
+
+The feedback recipient and Resend key stay on the server and are never sent to the browser. For local testing, Resend supports `onboarding@resend.dev`; set `FEEDBACK_FROM_EMAIL` after verifying your own sending domain.
 
 ### 3. Run
 ```bash
@@ -49,6 +55,7 @@ culina/
 - **Pantry** — Track your ingredients, get recipe suggestions from what you have
 - **Planner** — 7-day AI meal plan with macro targets
 - **Save** — Save and manage your favorite recipes
+- **Private feedback** — Send a short note to the owner without exposing the recipient email
 
 ## Deploy to Vercel
 
@@ -57,4 +64,4 @@ npm i -g vercel
 vercel
 ```
 
-Add `ANTHROPIC_API_KEY` in your Vercel project settings → Environment Variables.
+Add `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, and `FEEDBACK_TO_EMAIL` in your Vercel project settings → Environment Variables.
