@@ -1,7 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 
-const REQUEST_TIMEOUT_MS = 45_000;
+export const maxDuration = 120;
+
+const REQUEST_TIMEOUT_MS = 90_000;
 const MAX_PROMPT_CHARS = 12_000;
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5";
 

@@ -1,7 +1,7 @@
 "use client";
 
 // Culinaria: multi-select dietary needs, textures, expanded cuisines, cook mode, scaling, and surprise.
-import { useCallback, useState, useRef, useEffect } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Image from "next/image";
 import { animate, createScope, stagger } from "animejs";
 import {
@@ -51,6 +51,7 @@ const TIMES = ["Any Time","Under 15 min","Under 30 min","Under 1 hour","1-2 hour
 const SKILLS = ["Any Level","Beginner","Intermediate","Advanced"];
 const CALORIE_OPTIONS = ["Any Calories","Under 300 cal","300-500 cal","500-700 cal","700+ cal"];
 const IMPROVE_PROMPTS = ["Make it vegetarian","Reduce calories by 30%","Make it high protein","Turn into meal prep","Make it keto","Add more vegetables","Make it spicier","Reduce cooking time","Make it dairy-free","Lower the sodium","Make it diabetic-friendly","Make it soft-texture friendly (no soup)","Make it halal","Use budget ingredients","Add a flavor twist"];
+const DIFFERENT_RECIPE_PROMPT = "Create a completely different recipe from this one. Keep the same dietary needs and practical constraints, but use a different dish name, cooking method, flavor profile, and presentation. Return the full new recipe, not a variation of the current dish.";
 
 const SAMPLE_RECIPES = [
   { id:1, name:"Roasted Garlic Pasta al Limone", cuisine:"Italian", time:"25 min", mins:25, calories:480, rating:4.8, emoji:"🍝", diff:"Easy", tags:["Vegetarian"] },
@@ -112,6 +113,15 @@ type MealPlan = Record<string, { b: string; l: string; d: string; cal: number }>
 
 interface PantryItem { name: string; qty: string; status: PantryStatus; }
 
+function cloneRecipe(recipe: Recipe): Recipe {
+  return {
+    ...recipe,
+    ingredients: recipe.ingredients.map(ingredient => ({ ...ingredient })),
+    steps: [...recipe.steps],
+    nutrition: { ...recipe.nutrition },
+  };
+}
+
 const STORAGE_KEYS = {
   saved: "culina.savedRecipes.v1",
   pantry: "culina.pantryItems.v1",
@@ -151,22 +161,31 @@ Calories: ${p.calories || "flexible"}
 
 If dietary requirements conflict with an ingredient, substitute it appropriately and mention the swap in tips.
 For allergies or medical diets, avoid claims that the recipe is medically safe. Remind the user in tips to verify packaged ingredients and cross-contamination risks when relevant.
+Keep the recipe concise and complete: use 6-12 ingredients and 5-8 clear steps, with each step limited to 1-2 sentences. Keep the full response under 3000 tokens.
 
 Respond ONLY with valid JSON, no markdown:
 {"name":"...","cuisine":"...","description":"...","time":"...","difficulty":"Easy|Intermediate|Advanced","servings":2,"ingredients":[{"amount":"...","name":"..."}],"steps":["..."],"nutrition":{"calories":0,"protein":0,"carbs":0,"fat":0},"tips":"..."}`;
 }
 
 function buildImprovePrompt(recipe: Recipe, instruction: string) {
-  return `Modify this recipe per the instruction. Return ONLY valid JSON in the same schema.
+  return `Modify this recipe per the instruction. Return the complete updated recipe and ONLY valid JSON in the same schema.
+
+When replacing an ingredient, remove the unavailable ingredient, choose one practical substitute, adjust its amount, update every dependent instruction, and briefly explain the swap in tips. When asked for a different recipe, create a genuinely different dish rather than renaming the current one.
+Keep the complete response under 3000 tokens. Use 6-12 ingredients and 5-8 clear steps, with each step limited to 1-2 sentences.
 
 Recipe: ${JSON.stringify(recipe)}
 Instruction: "${instruction}"`;
+}
+
+function ingredientSwapPrompt(ingredient: string) {
+  return `I do not have ${ingredient}. Replace it with the best easy-to-find substitute. Update the ingredient amount and every cooking step that uses it while keeping the dish balanced and the dietary needs intact.`;
 }
 
 function buildDiscoverPrompt(card: { name:string; cuisine:string; time:string; calories:number; diff:string }) {
   return `You are a world-class chef AI. Generate the complete, authentic recipe for "${card.name}", a ${card.cuisine} dish.
 
 Target: ~${card.calories} cal, ${card.time} cook time, ${card.diff} difficulty.
+Keep the recipe concise and complete: use 6-12 ingredients and 5-8 clear steps, with each step limited to 1-2 sentences. Keep the full response under 3000 tokens.
 
 Respond ONLY with valid JSON, no markdown:
 {"name":"${card.name}","cuisine":"${card.cuisine}","description":"...","time":"${card.time}","difficulty":"${card.diff}","servings":2,"ingredients":[{"amount":"...","name":"..."}],"steps":["..."],"nutrition":{"calories":${card.calories},"protein":0,"carbs":0,"fat":0},"tips":"..."}`;
@@ -582,9 +601,12 @@ function IngredientWheel({
 }
 
 // ─── RecipeOutput ─────────────────────────────────────────────────────────────
-function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToast }: {
+function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onImprove, onTryAnother, onAddToPlanner, onToast }: {
   recipe: Recipe; saved: boolean;
-  onSave: () => void; onImprove: (i: string) => void;
+  isImproving: boolean; onSave: () => void;
+  onRecipeChange: (recipe: Recipe) => void;
+  onImprove: (i: string) => void;
+  onTryAnother: () => void;
   onAddToPlanner?: (day: string, meal: MealKey) => void;
   onToast?: (msg: string, icon?: string) => void;
 }) {
@@ -595,6 +617,11 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
   const [checkedIng, setCheckedIng] = useState<Set<number>>(new Set());
   const [checkedSteps, setCheckedSteps] = useState<Set<number>>(new Set());
   const [servings, setServings] = useState(recipe.servings || 2);
+  const [substituteRequest, setSubstituteRequest] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftRecipe, setDraftRecipe] = useState<Recipe>(() => cloneRecipe(recipe));
+  const [editError, setEditError] = useState<string|null>(null);
+  const substituteRequestId = useId();
   const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
   const factor = (recipe.servings || 1) > 0 ? servings / (recipe.servings || 1) : 1;
@@ -614,12 +641,96 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
     }
   };
 
+  const submitSubstitution = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const request = substituteRequest.trim();
+    if (!request || isImproving) return;
+    onImprove(`I need an ingredient substitute. ${request} Replace the unavailable ingredient, adjust the amount, and update every affected cooking step.`);
+    setSubstituteRequest("");
+  };
+
+  const beginEditing = () => {
+    setDraftRecipe(cloneRecipe(recipe));
+    setEditError(null);
+    setCookMode(false);
+    setIsEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setDraftRecipe(cloneRecipe(recipe));
+    setEditError(null);
+    setIsEditing(false);
+  };
+
+  const saveEditing = () => {
+    const cleanedIngredients = draftRecipe.ingredients
+      .map(ingredient => ({
+        amount: ingredient.amount.trim() || "as needed",
+        name: ingredient.name.trim(),
+      }))
+      .filter(ingredient => ingredient.name);
+    const cleanedSteps = draftRecipe.steps.map(step => step.trim()).filter(Boolean);
+    const name = draftRecipe.name.trim();
+
+    if (!name || !cleanedIngredients.length || !cleanedSteps.length) {
+      setEditError("Add a recipe name, at least one ingredient, and at least one direction before saving.");
+      return;
+    }
+
+    onRecipeChange({
+      ...draftRecipe,
+      name,
+      description: draftRecipe.description.trim(),
+      ingredients: cleanedIngredients,
+      steps: cleanedSteps,
+    });
+    setEditError(null);
+    setIsEditing(false);
+    onToast?.("Recipe edits saved", "✓");
+  };
+
   return (
     <article className="recipe-output" aria-labelledby="generated-recipe-title">
       <div className="recipe-header">
-        <div className="recipe-cuisine-tag">✦ {recipe.cuisine}</div>
-        <h2 id="generated-recipe-title" className="recipe-name">{recipe.name}</h2>
-        <p className="recipe-desc">{recipe.description}</p>
+        <div className="recipe-header-toolbar">
+          <div className="recipe-cuisine-tag">✦ {recipe.cuisine}</div>
+          {isEditing ? (
+            <div className="recipe-edit-header-actions">
+              <button type="button" className="recipe-edit-header-button secondary" onClick={cancelEditing}>Cancel</button>
+              <button type="button" className="recipe-edit-header-button" onClick={saveEditing}>Save changes</button>
+            </div>
+          ) : (
+            <button type="button" className="recipe-edit-header-button" disabled={isImproving} onClick={beginEditing}>
+              Edit recipe
+            </button>
+          )}
+        </div>
+        {isEditing ? (
+          <>
+            <label className="sr-only" htmlFor="generated-recipe-title">Recipe name</label>
+            <input
+              id="generated-recipe-title"
+              className="recipe-edit-title-input"
+              value={draftRecipe.name}
+              onChange={event => setDraftRecipe(current => ({ ...current, name: event.target.value }))}
+              maxLength={120}
+            />
+            <label className="sr-only" htmlFor={`${substituteRequestId}-recipe-description`}>Recipe description</label>
+            <textarea
+              id={`${substituteRequestId}-recipe-description`}
+              className="recipe-edit-description-input"
+              value={draftRecipe.description}
+              onChange={event => setDraftRecipe(current => ({ ...current, description: event.target.value }))}
+              rows={3}
+              maxLength={500}
+            />
+          </>
+        ) : (
+          <>
+            <h2 id="generated-recipe-title" className="recipe-name">{recipe.name}</h2>
+            <p className="recipe-desc">{recipe.description}</p>
+          </>
+        )}
         <div className="recipe-meta">
           {[["Time", `⏱ ${recipe.time}`],["Difficulty",`◆ ${recipe.difficulty}`],["Calories / serving",`🔥 ${recipe.nutrition?.calories}`]].map(([label,val])=>(
             <div key={label} className="recipe-meta-item">
@@ -642,7 +753,7 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
         <div>
           <h3 className="recipe-section-title">◎ Ingredients</h3>
           <ul className="ingredient-list">
-            {recipe.ingredients?.map((ing, i) => (
+            {(isEditing ? draftRecipe.ingredients : recipe.ingredients)?.map((ing, i) => (
               <li key={i} className={`ingredient-item${cookMode?" checkable":""}${cookMode&&checkedIng.has(i)?" checked":""}`}
                 role={cookMode ? "checkbox" : undefined}
                 aria-checked={cookMode ? checkedIng.has(i) : undefined}
@@ -655,22 +766,110 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
                   }
                 } : undefined}>
                 {cookMode && <span className={`check-box${checkedIng.has(i)?" on":""}`}>{checkedIng.has(i)?"✓":""}</span>}
-                <span className="ingredient-amount">{scaleAmount(ing.amount, factor)}</span>
-                <span>{ing.name}</span>
+                {isEditing ? (
+                  <div className="ingredient-main ingredient-edit-fields">
+                    <label className="sr-only" htmlFor={`${substituteRequestId}-ingredient-${i}-amount`}>Ingredient {i + 1} amount</label>
+                    <input
+                      id={`${substituteRequestId}-ingredient-${i}-amount`}
+                      className="recipe-edit-input ingredient-edit-amount"
+                      value={ing.amount}
+                      placeholder="Amount"
+                      onChange={event => setDraftRecipe(current => ({
+                        ...current,
+                        ingredients: current.ingredients.map((ingredient, index) => index === i
+                          ? { ...ingredient, amount: event.target.value }
+                          : ingredient),
+                      }))}
+                    />
+                    <label className="sr-only" htmlFor={`${substituteRequestId}-ingredient-${i}-name`}>Ingredient {i + 1} name</label>
+                    <input
+                      id={`${substituteRequestId}-ingredient-${i}-name`}
+                      className="recipe-edit-input ingredient-edit-name"
+                      value={ing.name}
+                      placeholder="Ingredient"
+                      onChange={event => setDraftRecipe(current => ({
+                        ...current,
+                        ingredients: current.ingredients.map((ingredient, index) => index === i
+                          ? { ...ingredient, name: event.target.value }
+                          : ingredient),
+                      }))}
+                    />
+                  </div>
+                ) : (
+                  <span className="ingredient-main">
+                    <span className="ingredient-amount">{scaleAmount(ing.amount, factor)}</span>
+                    <span className="ingredient-name">{ing.name}</span>
+                  </span>
+                )}
+                {isEditing ? (
+                  <button
+                    type="button"
+                    className="recipe-edit-remove"
+                    aria-label={`Remove ingredient ${i + 1}: ${ing.name || "unnamed ingredient"}`}
+                    onClick={() => setDraftRecipe(current => ({
+                      ...current,
+                      ingredients: current.ingredients.filter((_, index) => index !== i),
+                    }))}
+                  >
+                    <X size={18} weight="bold" aria-hidden="true" />
+                  </button>
+                ) : !cookMode && (
+                  <button
+                    type="button"
+                    className="ingredient-swap"
+                    aria-label={`Find a substitute for ${ing.name}`}
+                    disabled={isImproving}
+                    onClick={() => onImprove(ingredientSwapPrompt(ing.name))}
+                  >
+                    Swap
+                  </button>
+                )}
               </li>
             ))}
           </ul>
-          {recipe.tips && (
+          {isEditing && (
+            <button
+              type="button"
+              className="recipe-edit-add"
+              onClick={() => setDraftRecipe(current => ({
+                ...current,
+                ingredients: [...current.ingredients, { amount: "", name: "" }],
+              }))}
+            >
+              <Plus size={18} weight="bold" aria-hidden="true" />
+              Add ingredient
+            </button>
+          )}
+          {!isEditing && recipe.tips && (
             <aside className="recipe-tip">
               <strong className="recipe-tip-label">Pro tip</strong>
               {recipe.tips}
             </aside>
           )}
+          {!isEditing && <section className="substitute-panel" aria-labelledby={`${substituteRequestId}-title`}>
+            <h3 id={`${substituteRequestId}-title`} className="substitute-title">Need a substitute ingredient?</h3>
+            <p className="substitute-description">Tap Swap beside an ingredient, or tell us what you do not have.</p>
+            <form className="substitute-form" onSubmit={submitSubstitution}>
+              <label className="sr-only" htmlFor={substituteRequestId}>What ingredient do you need to replace?</label>
+              <input
+                id={substituteRequestId}
+                className="substitute-input"
+                value={substituteRequest}
+                onChange={event => setSubstituteRequest(event.target.value)}
+                placeholder="I don't have sherry. What can I use instead?"
+                maxLength={300}
+                disabled={isImproving}
+              />
+              <button type="submit" className="substitute-submit" disabled={isImproving || !substituteRequest.trim()}>
+                Find a substitute
+              </button>
+            </form>
+          </section>}
         </div>
         <div>
           <div className="recipe-section-title" style={{justifyContent:"space-between"}}>
             <h3 className="recipe-section-heading">◈ Instructions</h3>
-            <button type="button" className={`cook-mode-toggle${cookMode?" on":""}`} aria-pressed={cookMode} onClick={()=>setCookMode(m=>!m)}>
+            <button type="button" className={`cook-mode-toggle${cookMode?" on":""}`} aria-pressed={cookMode} disabled={isEditing} onClick={()=>setCookMode(m=>!m)}>
               {cookMode ? "✓ Cooking" : "👨‍🍳 Cook Mode"}
             </button>
           </div>
@@ -683,7 +882,7 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
             </div>
           )}
           <ol className="step-list">
-            {recipe.steps?.map((step, i) => (
+            {(isEditing ? draftRecipe.steps : recipe.steps)?.map((step, i) => (
               <li key={i} className={`step-item${cookMode?" checkable":""}${cookMode&&checkedSteps.has(i)?" checked":""}`}
                 role={cookMode ? "checkbox" : undefined}
                 aria-checked={cookMode ? checkedSteps.has(i) : undefined}
@@ -696,11 +895,57 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
                   }
                 } : undefined}>
                 <span className="step-num">{cookMode&&checkedSteps.has(i)?"✓":i+1}</span>
-                <span className="step-text">{step}</span>
+                {isEditing ? (
+                  <>
+                    <label className="sr-only" htmlFor={`${substituteRequestId}-step-${i}`}>Direction {i + 1}</label>
+                    <textarea
+                      id={`${substituteRequestId}-step-${i}`}
+                      className="recipe-edit-input recipe-edit-step"
+                      value={step}
+                      rows={4}
+                      onChange={event => setDraftRecipe(current => ({
+                        ...current,
+                        steps: current.steps.map((direction, index) => index === i ? event.target.value : direction),
+                      }))}
+                    />
+                    <button
+                      type="button"
+                      className="recipe-edit-remove"
+                      aria-label={`Remove direction ${i + 1}`}
+                      onClick={() => setDraftRecipe(current => ({
+                        ...current,
+                        steps: current.steps.filter((_, index) => index !== i),
+                      }))}
+                    >
+                      <X size={18} weight="bold" aria-hidden="true" />
+                    </button>
+                  </>
+                ) : (
+                  <span className="step-text">{step}</span>
+                )}
               </li>
             ))}
           </ol>
+          {isEditing && (
+            <button
+              type="button"
+              className="recipe-edit-add"
+              onClick={() => setDraftRecipe(current => ({ ...current, steps: [...current.steps, ""] }))}
+            >
+              <Plus size={18} weight="bold" aria-hidden="true" />
+              Add direction
+            </button>
+          )}
         </div>
+        {isEditing && (
+          <div className="recipe-edit-footer">
+            {editError && <p className="recipe-edit-error" role="alert">{editError}</p>}
+            <div className="recipe-edit-footer-actions">
+              <button type="button" className="recipe-edit-cancel" onClick={cancelEditing}>Cancel</button>
+              <button type="button" className="recipe-edit-save" onClick={saveEditing}>Save changes</button>
+            </div>
+          </div>
+        )}
         {recipe.nutrition && (
           <div className="nutrition-grid">
             {([["Calories", recipe.nutrition.calories, "kcal"],["Protein", recipe.nutrition.protein, "g"],["Carbs", recipe.nutrition.carbs, "g"],["Fat", recipe.nutrition.fat, "g"]] as [string,number,string][]).map(([label,val,unit])=>(
@@ -711,15 +956,24 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
             ))}
           </div>
         )}
-        <div className="improve-panel">
-          <div className="improve-title">✦ AI Improvements</div>
+        {!isEditing && <div className="improve-panel">
+          <div className="improve-heading">
+            <div>
+              <div className="improve-title">✦ Make it yours</div>
+              <p className="improve-description">Choose a quick adjustment or ask for a completely different dish.</p>
+            </div>
+            <button type="button" className="try-another-button" disabled={isImproving} onClick={onTryAnother}>
+              <Sparkle size={17} weight="fill" aria-hidden="true" />
+              Try a different recipe
+            </button>
+          </div>
           <div className="improve-chips">
             {IMPROVE_PROMPTS.map(p => (
-              <button type="button" key={p} className="improve-chip" onClick={() => onImprove(p)}>{p}</button>
+              <button type="button" key={p} className="improve-chip" disabled={isImproving} onClick={() => onImprove(p)}>{p}</button>
             ))}
           </div>
-        </div>
-        <div className="recipe-actions">
+        </div>}
+        {!isEditing && <div className="recipe-actions">
           <button type="button" className={`btn-action${saved?" saved":""}`} aria-pressed={saved} onClick={onSave}>
             {saved ? "✓ Saved" : "♡ Save Recipe"}
           </button>
@@ -757,7 +1011,7 @@ function RecipeOutput({ recipe, saved, onSave, onImprove, onAddToPlanner, onToas
               </div>
             )}
           </div>
-        </div>
+        </div>}
       </div>
     </article>
   );
@@ -828,6 +1082,7 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, o
   const improve = async (instruction: string) => {
     if (!recipe || improving) return;
     setImproving(true);
+    setError(null);
     try {
       const result = await callClaude(buildImprovePrompt(recipe, instruction));
       setRecipe(result);
@@ -1067,7 +1322,7 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, o
         )}
         {recipe && !loading && (
           <div className="generator-results">
-            <RecipeOutput key={`${recipe.name}-${recipe.servings}`} recipe={recipe} saved={savedIds.has(recipe.name)} onSave={()=>onSave(recipe)} onImprove={improve} onAddToPlanner={(day,meal)=>onAddToPlanner(recipe,day,meal)} onToast={onToast}/>
+            <RecipeOutput key={`${recipe.name}-${recipe.servings}`} recipe={recipe} saved={savedIds.has(recipe.name)} isImproving={improving} onSave={()=>onSave(recipe)} onRecipeChange={setRecipe} onImprove={improve} onTryAnother={()=>improve(DIFFERENT_RECIPE_PROMPT)} onAddToPlanner={(day,meal)=>onAddToPlanner(recipe,day,meal)} onToast={onToast}/>
           </div>
         )}
       </div>
@@ -1197,7 +1452,7 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, o
         </div>
       )}
       {recipe && !loading && (
-        <RecipeOutput key={`${recipe.name}-${recipe.servings}`} recipe={recipe} saved={savedIds.has(recipe.name)} onSave={()=>onSave(recipe)} onImprove={improve} onAddToPlanner={(day,meal)=>onAddToPlanner(recipe,day,meal)} onToast={onToast}/>
+        <RecipeOutput key={`${recipe.name}-${recipe.servings}`} recipe={recipe} saved={savedIds.has(recipe.name)} isImproving={improving} onSave={()=>onSave(recipe)} onRecipeChange={setRecipe} onImprove={improve} onTryAnother={()=>improve(DIFFERENT_RECIPE_PROMPT)} onAddToPlanner={(day,meal)=>onAddToPlanner(recipe,day,meal)} onToast={onToast}/>
       )}
     </div>
   );
@@ -1408,6 +1663,7 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
   const improve = async (instruction: string) => {
     if (!generatedRecipe || improving) return;
     setImproving(true);
+    setError(null);
     try {
       const result = await callClaude(buildImprovePrompt(generatedRecipe, instruction));
       setGeneratedRecipe(result);
@@ -1517,8 +1773,11 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
                   key={`${generatedRecipe.name}-${generatedRecipe.servings}`}
                   recipe={generatedRecipe}
                   saved={savedIds.has(generatedRecipe.name)}
+                  isImproving={improving}
                   onSave={()=>onSave(generatedRecipe)}
+                  onRecipeChange={setGeneratedRecipe}
                   onImprove={improve}
+                  onTryAnother={()=>improve(DIFFERENT_RECIPE_PROMPT)}
                   onAddToPlanner={(day,meal)=>onAddToPlanner(generatedRecipe,day,meal)}
                   onToast={onToast}
                 />

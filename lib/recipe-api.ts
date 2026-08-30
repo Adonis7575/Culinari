@@ -111,7 +111,7 @@ export function parseRecipe(text: string): Recipe {
   return recipe;
 }
 
-export async function callClaude(prompt: string): Promise<Recipe> {
+async function requestClaude(prompt: string): Promise<string> {
   const response = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -136,5 +136,24 @@ export async function callClaude(prompt: string): Promise<Recipe> {
     .map((block) => typeof block.text === "string" ? block.text : "")
     .join("");
 
-  return parseRecipe(text);
+  return text;
+}
+
+export async function callClaude(prompt: string): Promise<Recipe> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const requestPrompt = attempt === 0
+      ? prompt
+      : `${prompt}\n\nYour previous response could not be parsed. Return one complete, strictly valid JSON object only. Escape quotation marks inside strings and do not include trailing commas or markdown.`;
+    const text = await requestClaude(requestPrompt);
+
+    try {
+      return parseRecipe(text);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("The AI returned an invalid recipe.");
+    }
+  }
+
+  throw lastError ?? new Error("The AI returned an invalid recipe. Please try again.");
 }

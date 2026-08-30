@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Cormorant_Garamond, DM_Sans, Space_Mono } from "next/font/google";
 
 const dmSans = DM_Sans({
@@ -25,6 +25,11 @@ const spaceMono = Space_Mono({
 export const metadata: Metadata = {
   title: "Culinaria — AI Recipe Platform",
   description: "Generate, discover, and customize recipes with AI",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 const themeInitScript = `
