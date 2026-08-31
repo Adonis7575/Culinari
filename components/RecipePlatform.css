@@ -725,6 +725,12 @@
   }
   .btn-action:hover { background: var(--contrast-surface); color: var(--on-contrast); border-color: var(--contrast-surface); }
   .btn-action.saved { background: var(--sage); color: var(--on-accent); border-color: var(--sage); }
+  .btn-action:disabled { cursor: wait; opacity: 0.58; }
+  .download-pdf-action {
+    border-color: var(--terra); background: var(--terra-wash);
+    color: var(--terra); font-weight: 700;
+  }
+  .download-pdf-action:hover:not(:disabled) { background: var(--terra); color: var(--on-accent); border-color: var(--terra); }
 
   .improve-panel {
     grid-column: 1 / -1;

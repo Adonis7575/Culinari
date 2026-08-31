@@ -13,6 +13,7 @@ import {
   ChefHat,
   Clock,
   Diamond,
+  DownloadSimple,
   GlobeHemisphereWest,
   Leaf,
   MoonStars,
@@ -25,6 +26,7 @@ import {
 } from "@phosphor-icons/react";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { callClaude, type Recipe } from "../lib/recipe-api";
+import { downloadRecipePdf } from "../lib/recipe-pdf";
 import "./RecipePlatform.css";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -621,6 +623,7 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
   const [isEditing, setIsEditing] = useState(false);
   const [draftRecipe, setDraftRecipe] = useState<Recipe>(() => cloneRecipe(recipe));
   const [editError, setEditError] = useState<string|null>(null);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const substituteRequestId = useId();
   const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
@@ -687,6 +690,29 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
     setEditError(null);
     setIsEditing(false);
     onToast?.("Recipe edits saved", "✓");
+  };
+
+  const downloadPdf = async () => {
+    if (isDownloadingPdf) return;
+    setIsDownloadingPdf(true);
+
+    try {
+      const scaledRecipe: Recipe = {
+        ...recipe,
+        servings,
+        ingredients: recipe.ingredients.map(ingredient => ({
+          ...ingredient,
+          amount: scaleAmount(ingredient.amount, factor),
+        })),
+      };
+      await downloadRecipePdf(scaledRecipe);
+      onToast?.("Recipe PDF downloaded", "✓");
+    } catch (error) {
+      console.error("PDF download failed:", error);
+      onToast?.("Could not create the PDF", "!");
+    } finally {
+      setIsDownloadingPdf(false);
+    }
   };
 
   return (
@@ -985,6 +1011,10 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
             const list = `${recipe.name}: Grocery List (serves ${servings})\n\n${recipe.ingredients?.map(i=>`• ${scaleAmount(i.amount, factor)} ${i.name}`).join('\n')}`;
             copyText(list, "Grocery list copied");
           }}>🛒 Grocery List</button>
+          <button type="button" className="btn-action download-pdf-action" disabled={isDownloadingPdf} onClick={downloadPdf}>
+            <DownloadSimple size={17} weight="bold" aria-hidden="true" />
+            {isDownloadingPdf ? "Preparing PDF..." : "Download PDF"}
+          </button>
           <div style={{position:"relative"}}>
             <button type="button" className="btn-action" aria-expanded={showPicker} onClick={() => setShowPicker(p=>!p)}>📅 Add to Planner</button>
             {showPicker && (

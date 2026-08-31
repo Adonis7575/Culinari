@@ -12,6 +12,7 @@ node_modules/
 
 # production
 /build
+/output/
 
 # env files - NEVER commit these
 .env
