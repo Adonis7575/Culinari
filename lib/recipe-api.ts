@@ -68,6 +68,10 @@ export function parseRecipe(text: string): Recipe {
     throw new Error("The AI response was not a recipe object.");
   }
 
+  if (typeof parsed.error === "string" && !parsed.name) {
+    throw new Error(parsed.error);
+  }
+
   const ingredients = Array.isArray(parsed.ingredients)
     ? parsed.ingredients
         .filter(isRecord)
