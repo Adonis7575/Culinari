@@ -39,6 +39,8 @@ const themeInitScript = `
       const theme = savedTheme === "dark" ? "dark" : "light";
       document.documentElement.dataset.theme = theme;
       document.documentElement.style.colorScheme = theme;
+      const savedLanguage = JSON.parse(localStorage.getItem("culina.language.v1") ?? "null");
+      if (/^(en|es|fr|pt|de|it|id)$/.test(savedLanguage)) document.documentElement.lang = savedLanguage;
     } catch {
       document.documentElement.dataset.theme = "light";
       document.documentElement.style.colorScheme = "light";

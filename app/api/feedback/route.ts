@@ -92,6 +92,7 @@ export async function POST(request: NextRequest) {
   const email = cleanText(body.email, 254);
   const page = cleanText(body.page, MAX_PAGE_LENGTH).replace(/[\r\n]+/g, " ");
   const url = cleanText(body.url, MAX_URL_LENGTH);
+  const language = cleanText(body.language, 12).replace(/[^a-zA-Z-]/g, "");
 
   if (message.length < 3) {
     return NextResponse.json({ error: "Please share at least a few words." }, { status: 400 });
@@ -127,6 +128,7 @@ export async function POST(request: NextRequest) {
         `View: ${page || "Not provided"}`,
         `Page: ${url || "Not provided"}`,
         `Reply email: ${email || "Not provided"}`,
+        `Site language: ${language || "Not provided"}`,
         "",
         "Message",
         message,

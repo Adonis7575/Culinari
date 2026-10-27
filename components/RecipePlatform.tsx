@@ -11,6 +11,7 @@ import {
   CaretRight,
   ChatCircleDots,
   ChefHat,
+  Check,
   Clock,
   Diamond,
   DownloadSimple,
@@ -22,11 +23,22 @@ import {
   SlidersHorizontal,
   Sparkle,
   Sun,
+  Globe,
   X,
 } from "@phosphor-icons/react";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { callClaude, type Recipe } from "../lib/recipe-api";
 import { downloadRecipePdf } from "../lib/recipe-pdf";
+import {
+  LANGUAGES,
+  aiLanguageInstruction,
+  formatMinutes,
+  formatNumber,
+  weekdayLabel,
+  type LanguageCode,
+  type UIKey,
+} from "../lib/i18n";
+import { LanguageProvider, useI18n } from "../lib/i18n-context";
 import "./RecipePlatform.css";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -146,7 +158,7 @@ function textureInstruction(texture: string) {
   return base + (detail[texture] || "");
 }
 
-function buildRecipePrompt(p: {ingredients:string[];cuisine:string;diets:string[];customDiet:string;texture:string;time:string;skill:string;calories:string}) {
+function buildRecipePrompt(p: {ingredients:string[];cuisine:string;diets:string[];customDiet:string;texture:string;time:string;skill:string;calories:string}, lang: LanguageCode) {
   const ing = p.ingredients.length ? p.ingredients.join(", ") : "pantry staples";
   const diets = p.diets.length ? p.diets.join(", ") : "none";
   const textureNote = textureInstruction(p.texture);
@@ -166,31 +178,31 @@ For allergies or medical diets, avoid claims that the recipe is medically safe. 
 Keep the recipe concise and complete: use 6-12 ingredients and 5-8 clear steps, with each step limited to 1-2 sentences. Keep the full response under 3000 tokens.
 
 Respond ONLY with valid JSON, no markdown:
-{"name":"...","cuisine":"...","description":"...","time":"...","difficulty":"Easy|Intermediate|Advanced","servings":2,"ingredients":[{"amount":"...","name":"..."}],"steps":["..."],"nutrition":{"calories":0,"protein":0,"carbs":0,"fat":0},"tips":"..."}`;
+{"name":"...","cuisine":"...","description":"...","time":"...","difficulty":"Easy|Intermediate|Advanced","servings":2,"ingredients":[{"amount":"...","name":"..."}],"steps":["..."],"nutrition":{"calories":0,"protein":0,"carbs":0,"fat":0},"tips":"..."}${aiLanguageInstruction(lang)}`;
 }
 
-function buildImprovePrompt(recipe: Recipe, instruction: string) {
+function buildImprovePrompt(recipe: Recipe, instruction: string, lang: LanguageCode) {
   return `Modify this recipe per the instruction. Return the complete updated recipe and ONLY valid JSON in the same schema.
 
 When replacing an ingredient, remove the unavailable ingredient, choose one practical substitute, adjust its amount, update every dependent instruction, and briefly explain the swap in tips. When asked for a different recipe, create a genuinely different dish rather than renaming the current one.
 Keep the complete response under 3000 tokens. Use 6-12 ingredients and 5-8 clear steps, with each step limited to 1-2 sentences.
 
 Recipe: ${JSON.stringify(recipe)}
-Instruction: "${instruction}"`;
+Instruction: "${instruction}"${aiLanguageInstruction(lang)}`;
 }
 
 function ingredientSwapPrompt(ingredient: string) {
   return `I do not have ${ingredient}. Replace it with the best easy-to-find substitute. Update the ingredient amount and every cooking step that uses it while keeping the dish balanced and the dietary needs intact.`;
 }
 
-function buildDiscoverPrompt(card: { name:string; cuisine:string; time:string; calories:number; diff:string }) {
+function buildDiscoverPrompt(card: { name:string; cuisine:string; time:string; calories:number; diff:string }, lang: LanguageCode, localized: { name: string; cuisine: string; time: string }) {
   return `You are a world-class chef AI. Generate the complete, authentic recipe for "${card.name}", a ${card.cuisine} dish.
 
 Target: ~${card.calories} cal, ${card.time} cook time, ${card.diff} difficulty.
 Keep the recipe concise and complete: use 6-12 ingredients and 5-8 clear steps, with each step limited to 1-2 sentences. Keep the full response under 3000 tokens.
 
 Respond ONLY with valid JSON, no markdown:
-{"name":"${card.name}","cuisine":"${card.cuisine}","description":"...","time":"${card.time}","difficulty":"${card.diff}","servings":2,"ingredients":[{"amount":"...","name":"..."}],"steps":["..."],"nutrition":{"calories":${card.calories},"protein":0,"carbs":0,"fat":0},"tips":"..."}`;
+{"name":${JSON.stringify(localized.name)},"cuisine":${JSON.stringify(localized.cuisine)},"description":"...","time":${JSON.stringify(localized.time)},"difficulty":"${card.diff}","servings":2,"ingredients":[{"amount":"...","name":"..."}],"steps":["..."],"nutrition":{"calories":${card.calories},"protein":0,"carbs":0,"fat":0},"tips":"..."}${aiLanguageInstruction(lang)}`;
 }
 
 function buildMealPlan(savedRecipes: Recipe[], seed = Date.now()): MealPlan {
@@ -293,6 +305,7 @@ function trapDialogFocus(event: React.KeyboardEvent<HTMLDivElement>) {
 
 // ─── Private feedback ────────────────────────────────────────────────────────
 function FeedbackWidget({ currentView }: { currentView: string }) {
+  const { t, lang, localizeError } = useI18n();
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [email, setEmail] = useState("");
@@ -330,7 +343,7 @@ function FeedbackWidget({ currentView }: { currentView: string }) {
     const trimmedMessage = message.trim();
     if (trimmedMessage.length < 3) {
       setStatus("error");
-      setError("Please share at least a few words.");
+      setError(t("fbTooShort"));
       messageRef.current?.focus();
       return;
     }
@@ -348,12 +361,13 @@ function FeedbackWidget({ currentView }: { currentView: string }) {
           website,
           page: currentView,
           url: window.location.href,
+          language: lang,
         }),
       });
       const data: unknown = await response.json().catch(() => null);
       const detail = data && typeof data === "object" && "error" in data && typeof data.error === "string"
-        ? data.error
-        : "Feedback could not be sent. Please try again.";
+        ? localizeError(data.error)
+        : t("fbFailed");
 
       if (!response.ok) throw new Error(detail);
 
@@ -363,7 +377,7 @@ function FeedbackWidget({ currentView }: { currentView: string }) {
       setStatus("sent");
     } catch (submitError: unknown) {
       setStatus("error");
-      setError(submitError instanceof Error ? submitError.message : "Feedback could not be sent. Please try again.");
+      setError(submitError instanceof Error && submitError.message ? localizeError(submitError.message) : t("fbFailed"));
     }
   };
 
@@ -389,13 +403,13 @@ function FeedbackWidget({ currentView }: { currentView: string }) {
         >
           <div className="feedback-panel-head">
             <div>
-              <p className="feedback-kicker">Private note</p>
-              <h2 id="feedback-title">Share feedback</h2>
+              <p className="feedback-kicker">{t("fbKicker")}</p>
+              <h2 id="feedback-title">{t("fbTitle")}</h2>
             </div>
             <button
               type="button"
               className="feedback-close"
-              aria-label="Close feedback form"
+              aria-label={t("fbClose")}
               onClick={() => {
                 setOpen(false);
                 triggerRef.current?.focus();
@@ -409,16 +423,16 @@ function FeedbackWidget({ currentView }: { currentView: string }) {
             <div className="feedback-success" role="status">
               <span aria-hidden="true">✓</span>
               <div>
-                <strong>Thank you.</strong>
-                <p>Your feedback was sent privately.</p>
+                <strong>{t("fbThanks")}</strong>
+                <p>{t("fbSent")}</p>
               </div>
               <button type="button" className="feedback-secondary" onClick={() => setStatus("idle")}>
-                Send another note
+                {t("fbAnother")}
               </button>
             </div>
           ) : (
             <form className="feedback-form" onSubmit={handleSubmit}>
-              <label htmlFor="feedback-message">What could be better?</label>
+              <label htmlFor="feedback-message">{t("fbQuestion")}</label>
               <textarea
                 ref={messageRef}
                 id="feedback-message"
@@ -426,14 +440,14 @@ function FeedbackWidget({ currentView }: { currentView: string }) {
                 minLength={3}
                 maxLength={1600}
                 required
-                placeholder="A quick thought, bug, or idea..."
+                placeholder={t("fbPlaceholder")}
                 onChange={event => {
                   setMessage(event.target.value);
                   if (status === "error") setStatus("idle");
                 }}
               />
               <div className="feedback-field-row">
-                <label htmlFor="feedback-email">Email <span>(optional, for a reply)</span></label>
+                <label htmlFor="feedback-email">{t("fbEmail")} <span>{t("fbEmailHint")}</span></label>
                 <input
                   id="feedback-email"
                   type="email"
@@ -456,10 +470,10 @@ function FeedbackWidget({ currentView }: { currentView: string }) {
               </div>
               {status === "error" && <p className="feedback-error" role="alert">{error}</p>}
               <div className="feedback-form-foot">
-                <p>Your note goes only to the Culinaria owner.</p>
+                <p>{t("fbOwnerOnly")}</p>
                 <button type="submit" className="feedback-submit" disabled={status === "sending"}>
                   <PaperPlaneTilt size={17} weight="fill" aria-hidden="true" />
-                  {status === "sending" ? "Sending..." : "Send privately"}
+                  {status === "sending" ? t("fbSending") : t("fbSend")}
                 </button>
               </div>
             </form>
@@ -476,7 +490,7 @@ function FeedbackWidget({ currentView }: { currentView: string }) {
         onClick={toggleOpen}
       >
         <ChatCircleDots size={20} weight="duotone" aria-hidden="true" />
-        <span>Feedback</span>
+        <span>{t("fbTrigger")}</span>
       </button>
     </div>
   );
@@ -489,6 +503,7 @@ function IngredientWheel({
   ingredients: string[];
   onRemove: (ingredient: string) => void;
 }) {
+  const { t, term } = useI18n();
   const railRef = useRef<HTMLDivElement>(null);
   const previousCountRef = useRef(ingredients.length);
   const [scrollState, setScrollState] = useState({ backward: false, forward: false });
@@ -558,7 +573,7 @@ function IngredientWheel({
       <button
         type="button"
         className="editorial-wheel-control"
-        aria-label="Scroll ingredients backward"
+        aria-label={t("wheelBack")}
         disabled={!scrollState.backward}
         onClick={() => scrollByStep(-1)}
       >
@@ -569,19 +584,19 @@ function IngredientWheel({
         className="editorial-chip-list"
         role="list"
         tabIndex={0}
-        aria-label="Selected ingredients. Use the mouse wheel or arrow keys to scroll."
-        title="Use the mouse wheel or arrows to scroll ingredients"
+        aria-label={t("wheelLabel")}
+        title={t("wheelTitle")}
         onWheel={handleWheel}
         onKeyDown={handleRailKeyDown}
       >
-        {ingredients.length === 0 && <span className="editorial-pref-label">Add what you have on hand</span>}
+        {ingredients.length === 0 && <span className="editorial-pref-label">{t("wheelEmpty")}</span>}
         {ingredients.map(ingredient => (
           <span key={ingredient} className="editorial-chip" role="listitem">
-            {ingredient}
+            {term(ingredient)}
             <button
               type="button"
               className="editorial-chip-remove"
-              aria-label={`Remove ${ingredient}`}
+              aria-label={t("removeNamed", { name: term(ingredient) })}
               onClick={() => onRemove(ingredient)}
             >
               <X size={15} weight="bold" aria-hidden="true" />
@@ -592,7 +607,7 @@ function IngredientWheel({
       <button
         type="button"
         className="editorial-wheel-control"
-        aria-label="Scroll ingredients forward"
+        aria-label={t("wheelForward")}
         disabled={!scrollState.forward}
         onClick={() => scrollByStep(1)}
       >
@@ -625,6 +640,7 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
   const [editError, setEditError] = useState<string|null>(null);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const substituteRequestId = useId();
+  const { t, term, lang } = useI18n();
   const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
   const factor = (recipe.servings || 1) > 0 ? servings / (recipe.servings || 1) : 1;
@@ -640,7 +656,7 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
       await navigator.clipboard.writeText(text);
       onToast?.(success, "✓");
     } catch {
-      onToast?.("Copy failed", "!");
+      onToast?.(t("copyFailed"), "!");
     }
   };
 
@@ -676,7 +692,7 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
     const name = draftRecipe.name.trim();
 
     if (!name || !cleanedIngredients.length || !cleanedSteps.length) {
-      setEditError("Add a recipe name, at least one ingredient, and at least one direction before saving.");
+      setEditError(t("editMissing"));
       return;
     }
 
@@ -689,7 +705,7 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
     });
     setEditError(null);
     setIsEditing(false);
-    onToast?.("Recipe edits saved", "✓");
+    onToast?.(t("editsSaved"), "✓");
   };
 
   const downloadPdf = async () => {
@@ -705,11 +721,28 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
           amount: scaleAmount(ingredient.amount, factor),
         })),
       };
-      await downloadRecipePdf(scaledRecipe);
-      onToast?.("Recipe PDF downloaded", "✓");
+      await downloadRecipePdf(scaledRecipe, {
+        time: t("time"),
+        difficulty: t("difficulty"),
+        servings: t("servings"),
+        calories: t("calories"),
+        perServing: t("perServingN", { n: recipe.nutrition?.calories ?? 0 }),
+        ingredients: t("ingredients"),
+        directions: t("instructions"),
+        nutritionPerServing: t("nutritionPerServing"),
+        protein: t("protein"),
+        carbs: t("carbs"),
+        fat: t("fat"),
+        cooksNote: t("cooksNote"),
+        footer: t("pdfFooter"),
+        cuisine: term(recipe.cuisine || "Custom"),
+        difficultyValue: term(recipe.difficulty),
+        locale: lang,
+      });
+      onToast?.(t("pdfDownloaded"), "✓");
     } catch (error) {
       console.error("PDF download failed:", error);
-      onToast?.("Could not create the PDF", "!");
+      onToast?.(t("pdfFailed"), "!");
     } finally {
       setIsDownloadingPdf(false);
     }
@@ -719,21 +752,21 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
     <article className="recipe-output" aria-labelledby="generated-recipe-title">
       <div className="recipe-header">
         <div className="recipe-header-toolbar">
-          <div className="recipe-cuisine-tag">✦ {recipe.cuisine}</div>
+          <div className="recipe-cuisine-tag">✦ {term(recipe.cuisine)}</div>
           {isEditing ? (
             <div className="recipe-edit-header-actions">
-              <button type="button" className="recipe-edit-header-button secondary" onClick={cancelEditing}>Cancel</button>
-              <button type="button" className="recipe-edit-header-button" onClick={saveEditing}>Save changes</button>
+              <button type="button" className="recipe-edit-header-button secondary" onClick={cancelEditing}>{t("cancel")}</button>
+              <button type="button" className="recipe-edit-header-button" onClick={saveEditing}>{t("saveChanges")}</button>
             </div>
           ) : (
             <button type="button" className="recipe-edit-header-button" disabled={isImproving} onClick={beginEditing}>
-              Edit recipe
+              {t("editRecipe")}
             </button>
           )}
         </div>
         {isEditing ? (
           <>
-            <label className="sr-only" htmlFor="generated-recipe-title">Recipe name</label>
+            <label className="sr-only" htmlFor="generated-recipe-title">{t("recipeName")}</label>
             <input
               id="generated-recipe-title"
               className="recipe-edit-title-input"
@@ -741,7 +774,7 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
               onChange={event => setDraftRecipe(current => ({ ...current, name: event.target.value }))}
               maxLength={120}
             />
-            <label className="sr-only" htmlFor={`${substituteRequestId}-recipe-description`}>Recipe description</label>
+            <label className="sr-only" htmlFor={`${substituteRequestId}-recipe-description`}>{t("recipeDescription")}</label>
             <textarea
               id={`${substituteRequestId}-recipe-description`}
               className="recipe-edit-description-input"
@@ -758,26 +791,26 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
           </>
         )}
         <div className="recipe-meta">
-          {[["Time", `⏱ ${recipe.time}`],["Difficulty",`◆ ${recipe.difficulty}`],["Calories / serving",`🔥 ${recipe.nutrition?.calories}`]].map(([label,val])=>(
+          {[[t("time"), `⏱ ${recipe.time}`],[t("difficulty"),`◆ ${term(recipe.difficulty)}`],[t("caloriesPerServing"),`🔥 ${recipe.nutrition?.calories}`]].map(([label,val])=>(
             <div key={label} className="recipe-meta-item">
               <span className="recipe-meta-label">{label}</span>
               <span className="recipe-meta-val">{val}</span>
             </div>
           ))}
           <div className="recipe-meta-item">
-            <span className="recipe-meta-label">Servings</span>
+            <span className="recipe-meta-label">{t("servings")}</span>
             <span className="serving-stepper">
-              <button type="button" className="serving-btn" aria-label="Decrease servings" disabled={servings <= 1} onClick={()=>setServings(s=>Math.max(1,s-1))}>−</button>
+              <button type="button" className="serving-btn" aria-label={t("decreaseServings")} disabled={servings <= 1} onClick={()=>setServings(s=>Math.max(1,s-1))}>−</button>
               <span className="recipe-meta-val serving-count" aria-live="polite">◎ {servings}</span>
-              <button type="button" className="serving-btn" aria-label="Increase servings" disabled={servings >= 24} onClick={()=>setServings(s=>Math.min(24,s+1))}>+</button>
+              <button type="button" className="serving-btn" aria-label={t("increaseServings")} disabled={servings >= 24} onClick={()=>setServings(s=>Math.min(24,s+1))}>+</button>
             </span>
-            {factor !== 1 && <span className="serving-note">amounts ×{Math.round(factor*100)/100}</span>}
+            {factor !== 1 && <span className="serving-note">{t("amountsTimes", { factor: formatNumber(lang, Math.round(factor*100)/100) })}</span>}
           </div>
         </div>
       </div>
       <div className="recipe-body">
         <div>
-          <h3 className="recipe-section-title">◎ Ingredients</h3>
+          <h3 className="recipe-section-title">◎ {t("ingredients")}</h3>
           <ul className="ingredient-list">
             {(isEditing ? draftRecipe.ingredients : recipe.ingredients)?.map((ing, i) => (
               <li key={i} className={`ingredient-item${cookMode?" checkable":""}${cookMode&&checkedIng.has(i)?" checked":""}`}
@@ -794,12 +827,12 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
                 {cookMode && <span className={`check-box${checkedIng.has(i)?" on":""}`}>{checkedIng.has(i)?"✓":""}</span>}
                 {isEditing ? (
                   <div className="ingredient-main ingredient-edit-fields">
-                    <label className="sr-only" htmlFor={`${substituteRequestId}-ingredient-${i}-amount`}>Ingredient {i + 1} amount</label>
+                    <label className="sr-only" htmlFor={`${substituteRequestId}-ingredient-${i}-amount`}>{t("ingredientAmountN", { n: i + 1 })}</label>
                     <input
                       id={`${substituteRequestId}-ingredient-${i}-amount`}
                       className="recipe-edit-input ingredient-edit-amount"
                       value={ing.amount}
-                      placeholder="Amount"
+                      placeholder={t("amount")}
                       onChange={event => setDraftRecipe(current => ({
                         ...current,
                         ingredients: current.ingredients.map((ingredient, index) => index === i
@@ -807,12 +840,12 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
                           : ingredient),
                       }))}
                     />
-                    <label className="sr-only" htmlFor={`${substituteRequestId}-ingredient-${i}-name`}>Ingredient {i + 1} name</label>
+                    <label className="sr-only" htmlFor={`${substituteRequestId}-ingredient-${i}-name`}>{t("ingredientNameN", { n: i + 1 })}</label>
                     <input
                       id={`${substituteRequestId}-ingredient-${i}-name`}
                       className="recipe-edit-input ingredient-edit-name"
                       value={ing.name}
-                      placeholder="Ingredient"
+                      placeholder={t("ingredient")}
                       onChange={event => setDraftRecipe(current => ({
                         ...current,
                         ingredients: current.ingredients.map((ingredient, index) => index === i
@@ -831,7 +864,7 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
                   <button
                     type="button"
                     className="recipe-edit-remove"
-                    aria-label={`Remove ingredient ${i + 1}: ${ing.name || "unnamed ingredient"}`}
+                    aria-label={t("removeIngredientN", { n: i + 1, name: ing.name || t("unnamedIngredient") })}
                     onClick={() => setDraftRecipe(current => ({
                       ...current,
                       ingredients: current.ingredients.filter((_, index) => index !== i),
@@ -843,11 +876,11 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
                   <button
                     type="button"
                     className="ingredient-swap"
-                    aria-label={`Find a substitute for ${ing.name}`}
+                    aria-label={t("findSubstituteFor", { name: ing.name })}
                     disabled={isImproving}
                     onClick={() => onImprove(ingredientSwapPrompt(ing.name))}
                   >
-                    Swap
+                    {t("swap")}
                   </button>
                 )}
               </li>
@@ -863,48 +896,48 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
               }))}
             >
               <Plus size={18} weight="bold" aria-hidden="true" />
-              Add ingredient
+              {t("addIngredient")}
             </button>
           )}
           {!isEditing && recipe.tips && (
             <aside className="recipe-tip">
-              <strong className="recipe-tip-label">Pro tip</strong>
+              <strong className="recipe-tip-label">{t("proTip")}</strong>
               {recipe.tips}
             </aside>
           )}
           {!isEditing && <section className="substitute-panel" aria-labelledby={`${substituteRequestId}-title`}>
-            <h3 id={`${substituteRequestId}-title`} className="substitute-title">Need a substitute ingredient?</h3>
-            <p className="substitute-description">Tap Swap beside an ingredient, or tell us what you do not have.</p>
+            <h3 id={`${substituteRequestId}-title`} className="substitute-title">{t("subTitle")}</h3>
+            <p className="substitute-description">{t("subDesc")}</p>
             <form className="substitute-form" onSubmit={submitSubstitution}>
-              <label className="sr-only" htmlFor={substituteRequestId}>What ingredient do you need to replace?</label>
+              <label className="sr-only" htmlFor={substituteRequestId}>{t("subLabel")}</label>
               <input
                 id={substituteRequestId}
                 className="substitute-input"
                 value={substituteRequest}
                 onChange={event => setSubstituteRequest(event.target.value)}
-                placeholder="I don't have sherry. What can I use instead?"
+                placeholder={t("subPlaceholder")}
                 maxLength={300}
                 disabled={isImproving}
               />
               <button type="submit" className="substitute-submit" disabled={isImproving || !substituteRequest.trim()}>
-                Find a substitute
+                {t("subSubmit")}
               </button>
             </form>
           </section>}
         </div>
         <div>
           <div className="recipe-section-title" style={{justifyContent:"space-between"}}>
-            <h3 className="recipe-section-heading">◈ Instructions</h3>
+            <h3 className="recipe-section-heading">◈ {t("instructions")}</h3>
             <button type="button" className={`cook-mode-toggle${cookMode?" on":""}`} aria-pressed={cookMode} disabled={isEditing} onClick={()=>setCookMode(m=>!m)}>
-              {cookMode ? "✓ Cooking" : "👨‍🍳 Cook Mode"}
+              {cookMode ? `✓ ${t("cooking")}` : `👨‍🍳 ${t("cookMode")}`}
             </button>
           </div>
           {cookMode && (
             <div className="cook-progress">
-              <div className="cook-progress-bar" role="progressbar" aria-label="Cooking progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={stepProgress}>
+              <div className="cook-progress-bar" role="progressbar" aria-label={t("cookingProgress")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={stepProgress}>
                 <div className="cook-progress-fill" style={{width:`${stepProgress}%`}}/>
               </div>
-              <span className="cook-progress-label">{checkedSteps.size}/{recipe.steps?.length || 0} steps{stepProgress===100?", bon appétit! 🎉":""}</span>
+              <span className="cook-progress-label">{t("stepsDone", { done: checkedSteps.size, total: recipe.steps?.length || 0 })}{stepProgress===100?`, ${t("bonAppetit")} 🎉`:""}</span>
             </div>
           )}
           <ol className="step-list">
@@ -923,7 +956,7 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
                 <span className="step-num">{cookMode&&checkedSteps.has(i)?"✓":i+1}</span>
                 {isEditing ? (
                   <>
-                    <label className="sr-only" htmlFor={`${substituteRequestId}-step-${i}`}>Direction {i + 1}</label>
+                    <label className="sr-only" htmlFor={`${substituteRequestId}-step-${i}`}>{t("directionN", { n: i + 1 })}</label>
                     <textarea
                       id={`${substituteRequestId}-step-${i}`}
                       className="recipe-edit-input recipe-edit-step"
@@ -937,7 +970,7 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
                     <button
                       type="button"
                       className="recipe-edit-remove"
-                      aria-label={`Remove direction ${i + 1}`}
+                      aria-label={t("removeDirectionN", { n: i + 1 })}
                       onClick={() => setDraftRecipe(current => ({
                         ...current,
                         steps: current.steps.filter((_, index) => index !== i),
@@ -959,7 +992,7 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
               onClick={() => setDraftRecipe(current => ({ ...current, steps: [...current.steps, ""] }))}
             >
               <Plus size={18} weight="bold" aria-hidden="true" />
-              Add direction
+              {t("addDirection")}
             </button>
           )}
         </div>
@@ -967,14 +1000,14 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
           <div className="recipe-edit-footer">
             {editError && <p className="recipe-edit-error" role="alert">{editError}</p>}
             <div className="recipe-edit-footer-actions">
-              <button type="button" className="recipe-edit-cancel" onClick={cancelEditing}>Cancel</button>
-              <button type="button" className="recipe-edit-save" onClick={saveEditing}>Save changes</button>
+              <button type="button" className="recipe-edit-cancel" onClick={cancelEditing}>{t("cancel")}</button>
+              <button type="button" className="recipe-edit-save" onClick={saveEditing}>{t("saveChanges")}</button>
             </div>
           </div>
         )}
         {recipe.nutrition && (
           <div className="nutrition-grid">
-            {([["Calories", recipe.nutrition.calories, "kcal"],["Protein", recipe.nutrition.protein, "g"],["Carbs", recipe.nutrition.carbs, "g"],["Fat", recipe.nutrition.fat, "g"]] as [string,number,string][]).map(([label,val,unit])=>(
+            {([[t("calories"), recipe.nutrition.calories, lang==="id"?"kkal":"kcal"],[t("protein"), recipe.nutrition.protein, "g"],[t("carbs"), recipe.nutrition.carbs, "g"],[t("fat"), recipe.nutrition.fat, "g"]] as [string,number,string][]).map(([label,val,unit])=>(
               <div key={label} className="nutrition-item">
                 <span className="nutrition-val">{val}<small style={{fontSize:"0.9rem",opacity:0.5}}>{unit}</small></span>
                 <span className="nutrition-label">{label}</span>
@@ -985,58 +1018,58 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
         {!isEditing && <div className="improve-panel">
           <div className="improve-heading">
             <div>
-              <div className="improve-title">✦ Make it yours</div>
-              <p className="improve-description">Choose a quick adjustment or ask for a completely different dish.</p>
+              <div className="improve-title">✦ {t("makeItYours")}</div>
+              <p className="improve-description">{t("makeItYoursDesc")}</p>
             </div>
             <button type="button" className="try-another-button" disabled={isImproving} onClick={onTryAnother}>
               <Sparkle size={17} weight="fill" aria-hidden="true" />
-              Try a different recipe
+              {t("tryDifferent")}
             </button>
           </div>
           <div className="improve-chips">
             {IMPROVE_PROMPTS.map(p => (
-              <button type="button" key={p} className="improve-chip" disabled={isImproving} onClick={() => onImprove(p)}>{p}</button>
+              <button type="button" key={p} className="improve-chip" disabled={isImproving} onClick={() => onImprove(p)}>{term(p)}</button>
             ))}
           </div>
         </div>}
         {!isEditing && <div className="recipe-actions">
           <button type="button" className={`btn-action${saved?" saved":""}`} aria-pressed={saved} onClick={onSave}>
-            {saved ? "✓ Saved" : "♡ Save Recipe"}
+            {saved ? `✓ ${t("saved")}` : `♡ ${t("saveRecipe")}`}
           </button>
           <button type="button" className="btn-action" onClick={() => {
-            const txt = `${recipe.name} (serves ${servings})\n\nIngredients:\n${recipe.ingredients?.map(i=>`${scaleAmount(i.amount, factor)} ${i.name}`).join('\n')}\n\nSteps:\n${recipe.steps?.map((s,i)=>`${i+1}. ${s}`).join('\n')}`;
-            copyText(txt, "Recipe copied");
-          }}>↗ Copy</button>
+            const txt = `${recipe.name} (${t("servesN", { n: servings })})\n\n${t("ingredients")}:\n${recipe.ingredients?.map(i=>`${scaleAmount(i.amount, factor)} ${i.name}`).join('\n')}\n\n${t("stepsHeading")}:\n${recipe.steps?.map((s,i)=>`${i+1}. ${s}`).join('\n')}`;
+            copyText(txt, t("recipeCopied"));
+          }}>↗ {t("copy")}</button>
           <button type="button" className="btn-action" onClick={() => {
-            const list = `${recipe.name}: Grocery List (serves ${servings})\n\n${recipe.ingredients?.map(i=>`• ${scaleAmount(i.amount, factor)} ${i.name}`).join('\n')}`;
-            copyText(list, "Grocery list copied");
-          }}>🛒 Grocery List</button>
+            const list = `${recipe.name}: ${t("groceryList")} (${t("servesN", { n: servings })})\n\n${recipe.ingredients?.map(i=>`• ${scaleAmount(i.amount, factor)} ${i.name}`).join('\n')}`;
+            copyText(list, t("groceryCopied"));
+          }}>🛒 {t("groceryList")}</button>
           <button type="button" className="btn-action download-pdf-action" disabled={isDownloadingPdf} onClick={downloadPdf}>
             <DownloadSimple size={17} weight="bold" aria-hidden="true" />
-            {isDownloadingPdf ? "Preparing PDF..." : "Download PDF"}
+            {isDownloadingPdf ? t("preparingPdf") : t("downloadPdf")}
           </button>
           <div style={{position:"relative"}}>
-            <button type="button" className="btn-action" aria-expanded={showPicker} onClick={() => setShowPicker(p=>!p)}>📅 Add to Planner</button>
+            <button type="button" className="btn-action" aria-expanded={showPicker} onClick={() => setShowPicker(p=>!p)}>📅 {t("addToPlanner")}</button>
             {showPicker && (
-              <div className="planner-picker-panel" role="group" aria-label="Choose meal plan slot">
+              <div className="planner-picker-panel" role="group" aria-label={t("chooseSlot")}>
                 <div>
-                  <div className="planner-picker-label">Day</div>
+                  <div className="planner-picker-label">{t("day")}</div>
                   <div className="picker-day-grid">
                     {DAYS.map(d=>(
-                      <button type="button" key={d} className={`picker-chip${pickerDay===d?" active":""}`} aria-pressed={pickerDay===d} onClick={()=>setPickerDay(d)}>{d}</button>
+                      <button type="button" key={d} className={`picker-chip${pickerDay===d?" active":""}`} aria-pressed={pickerDay===d} onClick={()=>setPickerDay(d)}>{weekdayLabel(lang, d)}</button>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <div className="planner-picker-label">Meal</div>
+                  <div className="planner-picker-label">{t("meal")}</div>
                   <div className="picker-meal-row">
-                    {([["b","Breakfast"],["l","Lunch"],["d","Dinner"]] as const).map(([k,label])=>(
-                      <button type="button" key={k} className={`picker-chip${pickerMeal===k?" active":""}`} aria-pressed={pickerMeal===k} onClick={()=>setPickerMeal(k)}>{label}</button>
+                    {([["b","breakfast"],["l","lunch"],["d","dinner"]] as const).map(([k,label])=>(
+                      <button type="button" key={k} className={`picker-chip${pickerMeal===k?" active":""}`} aria-pressed={pickerMeal===k} onClick={()=>setPickerMeal(k)}>{t(label)}</button>
                     ))}
                   </div>
                 </div>
                 <button type="button" className="btn-picker-confirm" onClick={()=>{onAddToPlanner?.(pickerDay,pickerMeal);setShowPicker(false);}}>
-                  Add to Plan
+                  {t("addToPlan")}
                 </button>
               </div>
             )}
@@ -1048,12 +1081,15 @@ function RecipeOutput({ recipe, saved, isImproving, onSave, onRecipeChange, onIm
 }
 
 // ─── GeneratorPage ────────────────────────────────────────────────────────────
+const QUICK = ["chicken","garlic","tomatoes","pasta","lemon","onion","ginger","rice","eggs","cheese"];
+
 function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, onToast }: {
   onSave: (r:Recipe)=>void; savedIds: Set<string>;
   initialIngredients?: string[];
   onAddToPlanner: (recipe: Recipe, day: string, meal: MealKey) => void;
   onToast: (msg: string, icon?: string) => void;
 }) {
+  const { t, term, lang, localizeError } = useI18n();
   const [ingredients, setIngredients] = useState<string[]>(
     initialIngredients?.length ? initialIngredients : ["chicken", "garlic", "tomatoes", "lemon"]
   );
@@ -1082,21 +1118,21 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, o
     setDiets(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d]);
   };
 
+  const errorText = (err: unknown) =>
+    err instanceof Error && err.message ? localizeError(err.message) : t("unknownError");
+
   const runGenerate = async (params: {ingredients:string[];cuisine:string;diets:string[];customDiet:string;texture:string;time:string;skill:string;calories:string}) => {
     setLoading(true); setError(null); setRecipe(null);
     try {
-      const result = await callClaude(buildRecipePrompt(params));
+      const result = await callClaude(buildRecipePrompt(params, lang));
       setRecipe(result);
     } catch (err) {
-      const msg = err instanceof Error && err.message ? err.message : "Unknown error";
-      setError(`Generation failed: ${msg}`);
+      setError(t("generationFailed", { msg: errorText(err) }));
     }
     finally { setLoading(false); }
   };
 
   const generate = () => runGenerate({ ingredients, cuisine, diets, customDiet, texture, time, skill, calories });
-
-  const QUICK = ["chicken","garlic","tomatoes","pasta","lemon","onion","ginger","rice","eggs","cheese"];
 
   const surprise = () => {
     const pool = CUISINES.filter(c => c !== "Any Cuisine");
@@ -1114,375 +1150,245 @@ function GeneratorPage({ onSave, savedIds, initialIngredients, onAddToPlanner, o
     setImproving(true);
     setError(null);
     try {
-      const result = await callClaude(buildImprovePrompt(recipe, instruction));
+      const result = await callClaude(buildImprovePrompt(recipe, instruction, lang));
       setRecipe(result);
     } catch (err) {
-      const msg = err instanceof Error && err.message ? err.message : "Unknown error";
-      setError(`Improvement failed: ${msg}`);
+      setError(t("improvementFailed", { msg: errorText(err) }));
     }
     finally { setImproving(false); }
   };
 
-  const useEditorialLayout = true;
-  if (useEditorialLayout) {
-    return (
-      <div className="page generator-page">
-        <section className="editorial-hero" aria-labelledby="generator-heading">
-          <div className="editorial-copy">
-            <div className="editorial-eyebrow">
-              <span className="editorial-eyebrow-line" aria-hidden="true" />
-              <span>AI-Powered Recipe Creation</span>
-              <span className="editorial-eyebrow-line" aria-hidden="true" />
-            </div>
-            <h1 id="generator-heading" className="editorial-title">
-              Turn what<br />
-              you have into<br />
-              something
-              <em>extraordinary.</em>
-            </h1>
-            <p className="editorial-subtitle">
-              Tell us what you have. Our AI generates complete, restaurant-quality recipes tailored to your taste, diet, and time.
-            </p>
-          </div>
-
-          <div className="editorial-visual" role="img" aria-label="Herb roasted chicken with tomatoes, garlic, and lemon">
-            <div className="editorial-slice editorial-slice-one" aria-hidden="true">
-              <Image src="/images/editorial/chicken-hero.webp" alt="" width={650} height={650} priority />
-            </div>
-            <div className="editorial-slice editorial-slice-two" aria-hidden="true">
-              <Image src="/images/editorial/chicken-hero.webp" alt="" width={650} height={650} priority />
-            </div>
-            <div className="editorial-slice editorial-slice-three" aria-hidden="true">
-              <Image src="/images/editorial/chicken-hero.webp" alt="" width={650} height={650} priority />
-            </div>
-
-            <div className="ingredient-note ingredient-note-chicken">
-              <span>chicken</span>
-              <Image src="/images/editorial/basil.webp" alt="" width={68} height={68} />
-            </div>
-            <div className="ingredient-note ingredient-note-garlic">
-              <span>garlic</span>
-              <Image src="/images/editorial/garlic.webp" alt="" width={68} height={68} />
-            </div>
-            <div className="ingredient-note ingredient-note-tomato">
-              <span>tomatoes</span>
-              <Image src="/images/editorial/tomato.webp" alt="" width={68} height={68} />
-            </div>
-            <div className="ingredient-note ingredient-note-lemon">
-              <span>lemon</span>
-              <Image src="/images/editorial/lemon.webp" alt="" width={68} height={68} />
-            </div>
-          </div>
-
-          <section className="editorial-composer" aria-label="Recipe generator">
-            <div className="editorial-input-row">
-              <form className="editorial-input-wrap" onSubmit={event=>{event.preventDefault();addIngredient();}}>
-                <Leaf className="editorial-input-icon" size={20} weight="duotone" aria-hidden="true" />
-                <input
-                  className="editorial-input"
-                  aria-label="Add an ingredient"
-                  placeholder="Add an ingredient"
-                  value={input}
-                  onChange={event=>setInput(event.target.value)}
-                  maxLength={80}
-                  autoComplete="off"
-                />
-                <button type="submit" className="editorial-add" aria-label="Add ingredient">
-                  <Plus size={20} weight="bold" aria-hidden="true" />
-                </button>
-              </form>
-
-              <IngredientWheel
-                ingredients={ingredients}
-                onRemove={ingredient=>setIngredients(current=>current.filter(item=>item!==ingredient))}
-              />
-
-              <button type="button" className="editorial-generate" onClick={generate} disabled={loading||improving}>
-                {loading||improving ? (
-                  <>
-                    <Sparkle size={19} weight="fill" aria-hidden="true" />
-                    <span>{loading?"Creating your recipe...":"Improving recipe..."}</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Generate recipe</span>
-                    <ArrowRight size={19} weight="bold" aria-hidden="true" />
-                  </>
-                )}
-              </button>
-
-              <button
-                type="button"
-                className="editorial-surprise"
-                onClick={surprise}
-                disabled={loading||improving}
-                title="Choose a random cuisine while keeping your dietary needs"
-              >
-                <Sparkle size={18} weight="duotone" aria-hidden="true" />
-                <span>Surprise me</span>
-              </button>
-            </div>
-
-            <div className="editorial-composer-divider" aria-hidden="true" />
-
-            <div className="editorial-preferences">
-              <label className="editorial-pref">
-                <GlobeHemisphereWest className="editorial-pref-icon" size={21} weight="duotone" aria-hidden="true" />
-                <span className="editorial-pref-label">Cuisine</span>
-                <select aria-label="Cuisine preference" value={cuisine} onChange={event=>setCuisine(event.target.value)}>
-                  <option>Any Cuisine</option>
-                  {Object.entries(CUISINE_GROUPS).map(([region, list])=>(
-                    <optgroup key={region} label={region}>
-                      {list.map(option=><option key={option}>{option}</option>)}
-                    </optgroup>
-                  ))}
-                </select>
-              </label>
-
-              <label className="editorial-pref">
-                <Clock className="editorial-pref-icon" size={21} weight="duotone" aria-hidden="true" />
-                <span className="editorial-pref-label">Time</span>
-                <select aria-label="Cooking time preference" value={time} onChange={event=>setTime(event.target.value)}>
-                  {TIMES.map(option=><option key={option}>{option}</option>)}
-                </select>
-              </label>
-
-              <button
-                type="button"
-                className="editorial-pref editorial-pref-button"
-                onClick={()=>setShowDietPanel(current=>!current)}
-                aria-expanded={showDietPanel}
-                aria-controls="generator-preferences"
-              >
-                <SlidersHorizontal className="editorial-pref-icon" size={21} weight="duotone" aria-hidden="true" />
-                <span className="editorial-pref-copy">
-                  <span className="editorial-pref-label">Diet</span>
-                  <span className="editorial-pref-value">{diets.length ? `${diets.length} selected` : "Any"}</span>
-                </span>
-                <CaretDown
-                  size={17}
-                  weight="bold"
-                  aria-hidden="true"
-                  style={{transform:showDietPanel?"rotate(180deg)":"none",transition:"transform 0.2s ease"}}
-                />
-              </button>
-            </div>
-          </section>
-        </section>
-
-        {showDietPanel && (
-          <section id="generator-preferences" className="editorial-options" aria-labelledby="generator-preferences-title">
-            <h2 id="generator-preferences-title" className="editorial-options-title">
-              <SlidersHorizontal size={22} weight="duotone" aria-hidden="true" />
-              Fine-tune your recipe
-            </h2>
-            <div className="editorial-options-grid">
-              <select className="select-field" aria-label="Texture and consistency preference" value={texture} onChange={event=>setTexture(event.target.value)}>
-                {TEXTURES.map(option=><option key={option}>{option}</option>)}
-              </select>
-              <select className="select-field" aria-label="Skill level preference" value={skill} onChange={event=>setSkill(event.target.value)}>
-                {SKILLS.map(option=><option key={option}>{option}</option>)}
-              </select>
-              <select className="select-field" aria-label="Calorie preference" value={calories} onChange={event=>setCalories(event.target.value)}>
-                {CALORIE_OPTIONS.map(option=><option key={option}>{option}</option>)}
-              </select>
-            </div>
-
-            {texture !== "Any Texture" && texture !== "Regular" && (
-              <div className="texture-note">{texture} mode keeps the meal varied, complete, and appropriate for the requested texture.</div>
-            )}
-
-            <div className="diet-panel">
-              {DIET_GROUPS.map(group=>(
-                <div key={group.label} className="diet-group">
-                  <div className="diet-group-label">{group.label}</div>
-                  <div className="improve-chips">
-                    {group.options.map(diet=>(
-                      <button
-                        type="button"
-                        key={diet}
-                        className={`diet-chip${diets.includes(diet)?" active":""}`}
-                        onClick={()=>toggleDiet(diet)}
-                        aria-pressed={diets.includes(diet)}
-                      >
-                        {diet}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              <div className="diet-group">
-                <div className="diet-group-label">Anything else?</div>
-                <textarea
-                  className="ingredient-input diet-custom"
-                  aria-label="Custom dietary restrictions and notes"
-                  placeholder="Add allergies, texture needs, equipment limits, or other cooking notes."
-                  value={customDiet}
-                  onChange={event=>setCustomDiet(event.target.value)}
-                  maxLength={500}
-                  rows={3}
-                />
-              </div>
-              <p className="diet-disclaimer">
-                Health and allergy filters guide recipe generation but do not replace medical advice. Verify packaged ingredients and cross-contamination risks.
-              </p>
-            </div>
-          </section>
-        )}
-
-        <div className="editorial-footer-art" aria-hidden="true">
-          <Image className="editorial-footer-herbs" src="/images/editorial/herb-scatter.webp" alt="" width={420} height={280} />
-          <Image className="editorial-footer-linen" src="/images/editorial/linen.webp" alt="" width={520} height={360} />
-        </div>
-
-        <div className="editorial-promise">
-          <ChefHat size={23} weight="duotone" aria-hidden="true" />
-          <span>From your ingredients to a complete recipe—instantly. No more meal-planning guesswork.</span>
-        </div>
-
-        {error && <div className="error-message" role="alert" style={{maxWidth:"860px",margin:"0 auto 2rem"}}>{error}</div>}
-        {loading && (
-          <div className="loading-state generator-results" role="status" aria-live="polite">
-            <div className="loading-spinner"/>
-            <div>
-              <div className="loading-label">Crafting your recipe...</div>
-              <div className="loading-sublabel">Our AI is combining flavors, calculating nutrition, and perfecting instructions.</div>
-            </div>
-          </div>
-        )}
-        {recipe && !loading && (
-          <div className="generator-results">
-            <RecipeOutput key={`${recipe.name}-${recipe.servings}`} recipe={recipe} saved={savedIds.has(recipe.name)} isImproving={improving} onSave={()=>onSave(recipe)} onRecipeChange={setRecipe} onImprove={improve} onTryAnother={()=>improve(DIFFERENT_RECIPE_PROMPT)} onAddToPlanner={(day,meal)=>onAddToPlanner(recipe,day,meal)} onToast={onToast}/>
-          </div>
-        )}
-      </div>
-    );
-  }
+  const [titleLine1, titleLine2, titleLine3] = t("heroTitle").split("|");
 
   return (
-    <div className="page">
-      <div className="hero">
-        <div className="hero-eyebrow">AI-Powered Recipe Creation</div>
-        <h1 className="hero-title">Turn any ingredients<br/>into <em>extraordinary</em> meals</h1>
-        <p className="hero-sub">Tell us what you have. Our AI generates complete, restaurant-quality recipes tailored to your taste, diet, and time.</p>
-      </div>
-      <div className="gen-card">
-        <h2 className="gen-card-title"><span style={{fontSize:"1.4rem"}} aria-hidden="true">◎</span> Your Ingredients</h2>
-        <form className="ingredient-input-row" onSubmit={event=>{event.preventDefault();addIngredient();}}>
-          <input className="ingredient-input" aria-label="Add an ingredient" placeholder="Add an ingredient (e.g. chicken, garlic…)"
-            value={input} onChange={e=>setInput(e.target.value)}
-            maxLength={80} autoComplete="off" />
-          <button type="submit" className="btn-add">+ Add</button>
-        </form>
-        <div style={{marginBottom:"0.75rem"}}>
-          <span style={{fontSize:"0.65rem",color:"var(--smoke)",marginRight:"0.5rem",fontFamily:"var(--font-mono),monospace",textTransform:"uppercase",letterSpacing:"0.08em"}}>Quick add:</span>
-          {QUICK.map(q=>(
-            <button type="button" key={q} className="quick-add" aria-pressed={ingredients.includes(q)} onClick={()=>setIngredients(p=>p.includes(q)?p.filter(item=>item!==q):[...p,q])}>
-              {q}
-            </button>
-          ))}
-        </div>
-        <div className="chip-list">
-          {ingredients.length===0 && <span style={{fontSize:"0.82rem",color:"var(--ash)",fontStyle:"italic"}}>No ingredients added yet</span>}
-          {ingredients.map(ing=>(
-            <span key={ing} className="chip">
-              {ing}
-              <button type="button" className="chip-x" aria-label={`Remove ${ing}`} onClick={()=>setIngredients(p=>p.filter(i=>i!==ing))}>×</button>
-            </span>
-          ))}
-        </div>
-        <div style={{borderTop:"1px solid var(--border)",paddingTop:"1.25rem",marginBottom:"1.25rem"}}>
-          <div style={{fontSize:"0.65rem",fontFamily:"var(--font-mono),monospace",textTransform:"uppercase",letterSpacing:"0.08em",color:"var(--smoke)",marginBottom:"0.75rem"}}>Preferences</div>
-          <div className="filter-row">
-            <select className="select-field" aria-label="Cuisine preference" value={cuisine} onChange={e=>setCuisine(e.target.value)}>
-              <option>Any Cuisine</option>
-              {Object.entries(CUISINE_GROUPS).map(([region, list])=>(
-                <optgroup key={region} label={region}>
-                  {list.map(c=><option key={c}>{c}</option>)}
-                </optgroup>
-              ))}
-            </select>
-            <select className="select-field" aria-label="Texture and consistency preference" value={texture} onChange={e=>setTexture(e.target.value)}>{TEXTURES.map(t=><option key={t}>{t}</option>)}</select>
-            <select className="select-field" aria-label="Cooking time preference" value={time} onChange={e=>setTime(e.target.value)}>{TIMES.map(t=><option key={t}>{t}</option>)}</select>
-            <select className="select-field" aria-label="Skill level preference" value={skill} onChange={e=>setSkill(e.target.value)}>{SKILLS.map(s=><option key={s}>{s}</option>)}</select>
-            <select className="select-field" aria-label="Calorie preference" value={calories} onChange={e=>setCalories(e.target.value)}>{CALORIE_OPTIONS.map(c=><option key={c}>{c}</option>)}</select>
+    <div className="page generator-page">
+      <section className="editorial-hero" aria-labelledby="generator-heading">
+        <div className="editorial-copy">
+          <div className="editorial-eyebrow">
+            <span className="editorial-eyebrow-line" aria-hidden="true" />
+            <span>{t("heroEyebrow")}</span>
+            <span className="editorial-eyebrow-line" aria-hidden="true" />
           </div>
+          <h1 id="generator-heading" className="editorial-title">
+            {titleLine1}<br />
+            {titleLine2}<br />
+            {titleLine3}
+            <em>{t("heroTitleEm")}</em>
+          </h1>
+          <p className="editorial-subtitle">
+            {t("heroSubtitle")}
+          </p>
+        </div>
+
+        <div className="editorial-visual" role="img" aria-label={t("heroVisualAlt")}>
+          <div className="editorial-slice editorial-slice-one" aria-hidden="true">
+            <Image src="/images/editorial/chicken-hero.webp" alt="" width={650} height={650} priority />
+          </div>
+          <div className="editorial-slice editorial-slice-two" aria-hidden="true">
+            <Image src="/images/editorial/chicken-hero.webp" alt="" width={650} height={650} priority />
+          </div>
+          <div className="editorial-slice editorial-slice-three" aria-hidden="true">
+            <Image src="/images/editorial/chicken-hero.webp" alt="" width={650} height={650} priority />
+          </div>
+
+          <div className="ingredient-note ingredient-note-chicken">
+            <span>{term("chicken")}</span>
+            <Image src="/images/editorial/basil.webp" alt="" width={68} height={68} />
+          </div>
+          <div className="ingredient-note ingredient-note-garlic">
+            <span>{term("garlic")}</span>
+            <Image src="/images/editorial/garlic.webp" alt="" width={68} height={68} />
+          </div>
+          <div className="ingredient-note ingredient-note-tomato">
+            <span>{term("tomatoes")}</span>
+            <Image src="/images/editorial/tomato.webp" alt="" width={68} height={68} />
+          </div>
+          <div className="ingredient-note ingredient-note-lemon">
+            <span>{term("lemon")}</span>
+            <Image src="/images/editorial/lemon.webp" alt="" width={68} height={68} />
+          </div>
+        </div>
+
+        <section className="editorial-composer" aria-label={t("recipeGenerator")}>
+          <div className="editorial-input-row">
+            <form className="editorial-input-wrap" onSubmit={event=>{event.preventDefault();addIngredient();}}>
+              <Leaf className="editorial-input-icon" size={20} weight="duotone" aria-hidden="true" />
+              <input
+                className="editorial-input"
+                aria-label={t("addAnIngredient")}
+                placeholder={t("addAnIngredient")}
+                value={input}
+                onChange={event=>setInput(event.target.value)}
+                maxLength={80}
+                autoComplete="off"
+              />
+              <button type="submit" className="editorial-add" aria-label={t("addIngredient")}>
+                <Plus size={20} weight="bold" aria-hidden="true" />
+              </button>
+            </form>
+
+            <IngredientWheel
+              ingredients={ingredients}
+              onRemove={ingredient=>setIngredients(current=>current.filter(item=>item!==ingredient))}
+            />
+
+            <button type="button" className="editorial-generate" onClick={generate} disabled={loading||improving}>
+              {loading||improving ? (
+                <>
+                  <Sparkle size={19} weight="fill" aria-hidden="true" />
+                  <span>{loading?t("creatingRecipe"):t("improvingRecipe")}</span>
+                </>
+              ) : (
+                <>
+                  <span>{t("generateRecipe")}</span>
+                  <ArrowRight size={19} weight="bold" aria-hidden="true" />
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              className="editorial-surprise"
+              onClick={surprise}
+              disabled={loading||improving}
+              title={t("surpriseTitle")}
+            >
+              <Sparkle size={18} weight="duotone" aria-hidden="true" />
+              <span>{t("surpriseMe")}</span>
+            </button>
+          </div>
+
+          <div className="editorial-composer-divider" aria-hidden="true" />
+
+          <div className="editorial-preferences">
+            <label className="editorial-pref">
+              <GlobeHemisphereWest className="editorial-pref-icon" size={21} weight="duotone" aria-hidden="true" />
+              <span className="editorial-pref-label">{t("cuisine")}</span>
+              <select aria-label={t("cuisinePref")} value={cuisine} onChange={event=>setCuisine(event.target.value)}>
+                <option value="Any Cuisine">{term("Any Cuisine")}</option>
+                {Object.entries(CUISINE_GROUPS).map(([region, list])=>(
+                  <optgroup key={region} label={term(region)}>
+                    {list.map(option=><option key={option} value={option}>{term(option)}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+
+            <label className="editorial-pref">
+              <Clock className="editorial-pref-icon" size={21} weight="duotone" aria-hidden="true" />
+              <span className="editorial-pref-label">{t("time")}</span>
+              <select aria-label={t("timePref")} value={time} onChange={event=>setTime(event.target.value)}>
+                {TIMES.map(option=><option key={option} value={option}>{term(option)}</option>)}
+              </select>
+            </label>
+
+            <button
+              type="button"
+              className="editorial-pref editorial-pref-button"
+              onClick={()=>setShowDietPanel(current=>!current)}
+              aria-expanded={showDietPanel}
+              aria-controls="generator-preferences"
+            >
+              <SlidersHorizontal className="editorial-pref-icon" size={21} weight="duotone" aria-hidden="true" />
+              <span className="editorial-pref-copy">
+                <span className="editorial-pref-label">{t("diet")}</span>
+                <span className="editorial-pref-value">{diets.length ? t("nSelected", { n: diets.length }) : t("any")}</span>
+              </span>
+              <CaretDown
+                size={17}
+                weight="bold"
+                aria-hidden="true"
+                style={{transform:showDietPanel?"rotate(180deg)":"none",transition:"transform 0.2s ease"}}
+              />
+            </button>
+          </div>
+        </section>
+      </section>
+
+      {showDietPanel && (
+        <section id="generator-preferences" className="editorial-options" aria-labelledby="generator-preferences-title">
+          <h2 id="generator-preferences-title" className="editorial-options-title">
+            <SlidersHorizontal size={22} weight="duotone" aria-hidden="true" />
+            {t("fineTune")}
+          </h2>
+          <div className="editorial-options-grid">
+            <select className="select-field" aria-label={t("texturePref")} value={texture} onChange={event=>setTexture(event.target.value)}>
+              {TEXTURES.map(option=><option key={option} value={option}>{term(option)}</option>)}
+            </select>
+            <select className="select-field" aria-label={t("skillPref")} value={skill} onChange={event=>setSkill(event.target.value)}>
+              {SKILLS.map(option=><option key={option} value={option}>{term(option)}</option>)}
+            </select>
+            <select className="select-field" aria-label={t("caloriePref")} value={calories} onChange={event=>setCalories(event.target.value)}>
+              {CALORIE_OPTIONS.map(option=><option key={option} value={option}>{term(option)}</option>)}
+            </select>
+          </div>
+
           {texture !== "Any Texture" && texture !== "Regular" && (
-            <div className="texture-note">
-              ✦ {texture} mode: full varied meals, never just soup.
-            </div>
+            <div className="texture-note">{t("textureNote", { texture: term(texture) })}</div>
           )}
-        </div>
-        <div style={{borderTop:"1px solid var(--border)",paddingTop:"1.25rem",marginBottom:"1.25rem"}}>
-          <button type="button" className="diet-panel-toggle" onClick={()=>setShowDietPanel(p=>!p)} aria-expanded={showDietPanel}>
-            <span style={{fontSize:"0.65rem",fontFamily:"var(--font-mono),monospace",textTransform:"uppercase",letterSpacing:"0.08em",color:"var(--smoke)"}}>
-              Dietary Needs {diets.length > 0 && <span className="nav-badge">{diets.length}</span>}
-            </span>
-            <span className="diet-panel-arrow">{showDietPanel ? "▴" : "▾"}</span>
-          </button>
-          {diets.length > 0 && !showDietPanel && (
-            <div className="chip-list" style={{marginTop:"0.5rem",marginBottom:0}}>
-              {diets.map(d=>(
-                <span key={d} className="chip">
-                  {d}
-                  <button type="button" className="chip-x" aria-label={`Remove ${d}`} onClick={()=>toggleDiet(d)}>×</button>
-                </span>
-              ))}
-            </div>
-          )}
-          {showDietPanel && (
-            <div className="diet-panel">
-              {DIET_GROUPS.map(group=>(
-                <div key={group.label} className="diet-group">
-                  <div className="diet-group-label">{group.icon} {group.label}</div>
-                  <div className="improve-chips">
-                    {group.options.map(d=>(
-                      <button type="button" key={d} className={`diet-chip${diets.includes(d)?" active":""}`} onClick={()=>toggleDiet(d)} aria-pressed={diets.includes(d)}>
-                        {d}
-                      </button>
-                    ))}
-                  </div>
+
+          <div className="diet-panel">
+            {DIET_GROUPS.map(group=>(
+              <div key={group.label} className="diet-group">
+                <div className="diet-group-label">{term(group.label)}</div>
+                <div className="improve-chips">
+                  {group.options.map(diet=>(
+                    <button
+                      type="button"
+                      key={diet}
+                      className={`diet-chip${diets.includes(diet)?" active":""}`}
+                      onClick={()=>toggleDiet(diet)}
+                      aria-pressed={diets.includes(diet)}
+                    >
+                      {term(diet)}
+                    </button>
+                  ))}
                 </div>
-              ))}
-              <div className="diet-group">
-                <div className="diet-group-label">✎ Anything else?</div>
-                <textarea
-                  className="ingredient-input diet-custom"
-                  aria-label="Custom dietary restrictions and notes"
-                  placeholder="Describe anything that doesn't fit above, such as post-surgery recovery, chewing difficulty, no raw onions, bariatric portions, microwave-only cooking, or kid-friendly textures."
-                  value={customDiet}
-                  onChange={e=>setCustomDiet(e.target.value)}
-                  maxLength={500}
-                  rows={3}
-                />
               </div>
-              <p className="diet-disclaimer">
-                Health and allergy filters guide recipe generation but do not replace medical advice. Verify packaged ingredients and cross-contamination risks.
-              </p>
+            ))}
+            <div className="diet-group">
+              <div className="diet-group-label">{t("anythingElse")}</div>
+              <textarea
+                className="ingredient-input diet-custom"
+                aria-label={t("customDietLabel")}
+                placeholder={t("customDietPlaceholder")}
+                value={customDiet}
+                onChange={event=>setCustomDiet(event.target.value)}
+                maxLength={500}
+                rows={3}
+              />
             </div>
-          )}
-        </div>
-        <div className="generate-row">
-          <button type="button" className="btn-generate" onClick={generate} disabled={loading||improving}>
-            {loading||improving ? <><div className="shimmer"/><span>{loading?"Generating your recipe…":"Improving recipe…"}</span></> : <><span style={{fontSize:"1.3rem"}}>✦</span><span>Generate Recipe with AI</span></>}
-          </button>
-          <button type="button" className="btn-surprise" onClick={surprise} disabled={loading||improving} title="Random cuisine, your dietary needs still respected">
-            🎲 Surprise Me
-          </button>
-        </div>
-        {error && <div className="error-message" role="alert">{error}</div>}
+            <p className="diet-disclaimer">
+              {t("dietDisclaimer")}
+            </p>
+          </div>
+        </section>
+      )}
+
+      <div className="editorial-footer-art" aria-hidden="true">
+        <Image className="editorial-footer-herbs" src="/images/editorial/herb-scatter.webp" alt="" width={420} height={280} />
+        <Image className="editorial-footer-linen" src="/images/editorial/linen.webp" alt="" width={520} height={360} />
       </div>
+
+      <div className="editorial-promise">
+        <ChefHat size={23} weight="duotone" aria-hidden="true" />
+        <span>{t("promise")}</span>
+      </div>
+
+      {error && <div className="error-message" role="alert" style={{maxWidth:"860px",margin:"0 auto 2rem"}}>{error}</div>}
       {loading && (
-        <div className="loading-state" role="status" aria-live="polite">
+        <div className="loading-state generator-results" role="status" aria-live="polite">
           <div className="loading-spinner"/>
           <div>
-            <div className="loading-label">Crafting your recipe…</div>
-            <div className="loading-sublabel">Our AI is combining flavors, calculating nutrition, and perfecting instructions.</div>
+            <div className="loading-label">{t("craftingRecipe")}</div>
+            <div className="loading-sublabel">{t("craftingSub")}</div>
           </div>
         </div>
       )}
       {recipe && !loading && (
-        <RecipeOutput key={`${recipe.name}-${recipe.servings}`} recipe={recipe} saved={savedIds.has(recipe.name)} isImproving={improving} onSave={()=>onSave(recipe)} onRecipeChange={setRecipe} onImprove={improve} onTryAnother={()=>improve(DIFFERENT_RECIPE_PROMPT)} onAddToPlanner={(day,meal)=>onAddToPlanner(recipe,day,meal)} onToast={onToast}/>
+        <div className="generator-results">
+          <RecipeOutput key={`${recipe.name}-${recipe.servings}`} recipe={recipe} saved={savedIds.has(recipe.name)} isImproving={improving} onSave={()=>onSave(recipe)} onRecipeChange={setRecipe} onImprove={improve} onTryAnother={()=>improve(DIFFERENT_RECIPE_PROMPT)} onAddToPlanner={(day,meal)=>onAddToPlanner(recipe,day,meal)} onToast={onToast}/>
+        </div>
       )}
     </div>
   );
@@ -1612,11 +1518,27 @@ function AmbientPageBackground({ variant }: { variant: AmbientVariant }) {
   );
 }
 
+const TITLE_ACCENT_STYLE: React.CSSProperties = { fontFamily: "var(--font-display),Georgia,serif", fontStyle: "italic", color: "var(--terra)" };
+
+function PageTitle({ before, em, after }: { before?: string; em?: string; after?: string }) {
+  return (
+    <h1 className="discover-title">
+      {before}{before && em ? " " : ""}<em style={TITLE_ACCENT_STYLE}>{em}</em>{after ? ` ${after}` : ""}
+    </h1>
+  );
+}
+
+function titleParts(value: string) {
+  const [before, em, after] = value.split("|");
+  return { before, em, after };
+}
+
 function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
   onSave:(r:Recipe)=>void; savedIds:Set<string>;
   onAddToPlanner: (recipe: Recipe, day: string, meal: MealKey) => void;
   onToast: (msg: string, icon?: string) => void;
 }) {
+  const { t, term, lang, localizeError } = useI18n();
   const [filter, setFilter] = useState("All");
   const [dietFilter, setDietFilter] = useState("All");
   const [timeFilter, setTimeFilter] = useState("All");
@@ -1629,16 +1551,18 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
   const lastFocusedRef = useRef<HTMLElement|null>(null);
 
   const filters = ["All", ...Array.from(new Set(SAMPLE_RECIPES.map(r=>r.cuisine)))];
-  const dietFilters = ["All", ...Array.from(new Set(SAMPLE_RECIPES.flatMap(r=>r.tags))).sort()];
-  const TIME_FILTERS: Array<[string, (m:number)=>boolean]> = [
-    ["All", ()=>true],
-    ["≤ 30 min", m=>m<=30],
-    ["≤ 1 hr", m=>m<=60],
-    ["Slow & worth it", m=>m>60],
+  const dietFilters = ["All", ...Array.from(new Set(SAMPLE_RECIPES.flatMap(r=>r.tags)))
+    .sort((a, b) => term(a).localeCompare(term(b), lang))];
+  const TIME_FILTERS: Array<[string, UIKey, (m:number)=>boolean]> = [
+    ["All", "all", ()=>true],
+    ["≤ 30 min", "le30", m=>m<=30],
+    ["≤ 1 hr", "le1h", m=>m<=60],
+    ["Slow & worth it", "slowWorthIt", m=>m>60],
   ];
   const DIFF_FILTERS = ["All","Easy","Intermediate","Advanced"];
 
-  const timeFn = TIME_FILTERS.find(([label])=>label===timeFilter)?.[1] ?? (()=>true);
+  const timeFn = TIME_FILTERS.find(([label])=>label===timeFilter)?.[2] ?? (()=>true);
+  const filterName = (value: string) => value === "All" ? t("all") : term(value);
   const shown = SAMPLE_RECIPES.filter(r=>
     (filter==="All" || r.cuisine===filter) &&
     (dietFilter==="All" || r.tags.includes(dietFilter)) &&
@@ -1679,11 +1603,15 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
     setError(null);
     setLoading(true);
     try {
-      const result = await callClaude(buildDiscoverPrompt(card));
+      const result = await callClaude(buildDiscoverPrompt(card, lang, {
+        name: term(card.name),
+        cuisine: term(card.cuisine),
+        time: formatMinutes(lang, card.mins),
+      }));
       setGeneratedRecipe(result);
     } catch (err) {
-      const msg = err instanceof Error && err.message ? err.message : "Unknown error";
-      setError(`Failed to generate recipe: ${msg}`);
+      const msg = err instanceof Error && err.message ? localizeError(err.message) : t("unknownError");
+      setError(t("generateFailedMsg", { msg }));
     }
     finally { setLoading(false); }
   };
@@ -1695,11 +1623,11 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
     setImproving(true);
     setError(null);
     try {
-      const result = await callClaude(buildImprovePrompt(generatedRecipe, instruction));
+      const result = await callClaude(buildImprovePrompt(generatedRecipe, instruction, lang));
       setGeneratedRecipe(result);
     } catch (err) {
-      const msg = err instanceof Error && err.message ? err.message : "Unknown error";
-      setError(`Improvement failed: ${msg}`);
+      const msg = err instanceof Error && err.message ? localizeError(err.message) : t("unknownError");
+      setError(t("improvementFailed", { msg }));
     }
     finally { setImproving(false); }
   };
@@ -1709,35 +1637,35 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
       <AmbientPageBackground variant="discover" />
       <div className="discover-page page-content-layer">
         <div style={{marginBottom:"2rem"}}>
-          <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>Recipe Collection</div>
-          <h1 className="discover-title">Discover <em style={{fontFamily:"var(--font-display),Georgia,serif",fontStyle:"italic",color:"var(--terra)"}}>exceptional</em> dishes</h1>
-          <p style={{color:"var(--smoke)",fontSize:"0.9rem"}}>Open any dish to get the full AI-generated recipe with ingredients, steps, and nutrition.</p>
+          <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>{t("collection")}</div>
+          <PageTitle {...titleParts(t("discoverTitle"))} />
+          <p style={{color:"var(--smoke)",fontSize:"0.9rem"}}>{t("discoverSub")}</p>
         </div>
         <div className="filter-bar">
-          <span className="filter-label">Cuisine:</span>
-          {filters.map(f=><button type="button" key={f} className={`filter-chip${filter===f?" active":""}`} aria-pressed={filter===f} onClick={()=>setFilter(f)}>{f}</button>)}
+          <span className="filter-label">{t("cuisine")}:</span>
+          {filters.map(f=><button type="button" key={f} className={`filter-chip${filter===f?" active":""}`} aria-pressed={filter===f} onClick={()=>setFilter(f)}>{filterName(f)}</button>)}
         </div>
         <div className="filter-bar">
-          <span className="filter-label">Diet:</span>
-          {dietFilters.map(f=><button type="button" key={f} className={`filter-chip${dietFilter===f?" active":""}`} aria-pressed={dietFilter===f} onClick={()=>setDietFilter(f)}>{f}</button>)}
+          <span className="filter-label">{t("diet")}:</span>
+          {dietFilters.map(f=><button type="button" key={f} className={`filter-chip${dietFilter===f?" active":""}`} aria-pressed={dietFilter===f} onClick={()=>setDietFilter(f)}>{filterName(f)}</button>)}
         </div>
         <div className="filter-bar">
-          <span className="filter-label">Time:</span>
-          {TIME_FILTERS.map(([label])=><button type="button" key={label} className={`filter-chip${timeFilter===label?" active":""}`} aria-pressed={timeFilter===label} onClick={()=>setTimeFilter(label)}>{label}</button>)}
-          <span className="filter-label" style={{marginLeft:"0.75rem"}}>Skill:</span>
-          {DIFF_FILTERS.map(f=><button type="button" key={f} className={`filter-chip${diffFilter===f?" active":""}`} aria-pressed={diffFilter===f} onClick={()=>setDiffFilter(f)}>{f}</button>)}
+          <span className="filter-label">{t("time")}:</span>
+          {TIME_FILTERS.map(([label, labelKey])=><button type="button" key={label} className={`filter-chip${timeFilter===label?" active":""}`} aria-pressed={timeFilter===label} onClick={()=>setTimeFilter(label)}>{t(labelKey)}</button>)}
+          <span className="filter-label" style={{marginLeft:"0.75rem"}}>{t("skill")}:</span>
+          {DIFF_FILTERS.map(f=><button type="button" key={f} className={`filter-chip${diffFilter===f?" active":""}`} aria-pressed={diffFilter===f} onClick={()=>setDiffFilter(f)}>{filterName(f)}</button>)}
           {(filter!=="All"||dietFilter!=="All"||timeFilter!=="All"||diffFilter!=="All") && (
             <button type="button" className="filter-chip" style={{marginLeft:"auto",color:"var(--terra)",borderColor:"var(--terra)"}}
               onClick={()=>{setFilter("All");setDietFilter("All");setTimeFilter("All");setDiffFilter("All");}}>
-              ✕ Clear ({shown.length} shown)
+              ✕ {t("clearShown", { n: shown.length })}
             </button>
           )}
         </div>
         {shown.length===0 && (
           <div className="empty-state">
             <div className="empty-icon">🔍</div>
-            <div className="empty-text">No recipes match those filters</div>
-            <p style={{fontSize:"0.9rem",color:"var(--smoke)",marginTop:"0.5rem"}}>Try clearing a filter, or use Generate to create exactly what you need.</p>
+            <div className="empty-text">{t("noMatch")}</div>
+            <p style={{fontSize:"0.9rem",color:"var(--smoke)",marginTop:"0.5rem"}}>{t("noMatchSub")}</p>
           </div>
         )}
         <div className="recipe-grid">
@@ -1746,21 +1674,21 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
               <div className="recipe-card-img">
                 <span style={{position:"relative",zIndex:1}}>{r.emoji}</span>
                 <div className="recipe-card-img-overlay"/>
-                <span className="recipe-card-tag">{r.cuisine}</span>
+                <span className="recipe-card-tag">{term(r.cuisine)}</span>
               </div>
               <div className="recipe-card-body">
-                <div className="recipe-card-name">{r.name}</div>
+                <div className="recipe-card-name">{term(r.name)}</div>
                 <div className="recipe-card-meta">
-                  <span>⏱ {r.time}</span>
-                  <span>🔥 {r.calories} cal</span>
-                  <span className="recipe-card-rating">★ {r.rating}</span>
+                  <span>⏱ {formatMinutes(lang, r.mins)}</span>
+                  <span>🔥 {r.calories} {t("calUnit")}</span>
+                  <span className="recipe-card-rating">★ {formatNumber(lang, r.rating)}</span>
                 </div>
                 {r.tags.length > 0 && (
                   <div className="recipe-card-tags">
-                    {r.tags.slice(0,3).map(t=><span key={t} className="recipe-card-diet-tag">{t}</span>)}
+                    {r.tags.slice(0,3).map(tag=><span key={tag} className="recipe-card-diet-tag">{term(tag)}</span>)}
                   </div>
                 )}
-                <div className="recipe-card-hint">✦ View full recipe →</div>
+                <div className="recipe-card-hint">✦ {t("viewFull")}</div>
               </div>
             </button>
           ))}
@@ -1769,16 +1697,16 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
 
       {activeCard && (
         <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-inner" role="dialog" aria-modal="true" aria-label={activeCard.name} onKeyDown={trapDialogFocus} onClick={e=>e.stopPropagation()}>
-            <button type="button" className="modal-close" aria-label="Close recipe dialog" autoFocus onClick={closeModal}>✕</button>
+          <div className="modal-inner" role="dialog" aria-modal="true" aria-label={term(activeCard.name)} onKeyDown={trapDialogFocus} onClick={e=>e.stopPropagation()}>
+            <button type="button" className="modal-close" aria-label={t("closeRecipeDialog")} autoFocus onClick={closeModal}>✕</button>
 
             {loading && (
               <div className="modal-loading-card">
                 <div className="loading-state" role="status" aria-live="polite">
                   <div className="loading-spinner"/>
                   <div>
-                    <div className="loading-label">Crafting {activeCard.name}…</div>
-                    <div className="loading-sublabel">Generating full recipe with ingredients, steps, and nutrition.</div>
+                    <div className="loading-label">{t("craftingNamed", { name: term(activeCard.name) })}</div>
+                    <div className="loading-sublabel">{t("craftingNamedSub")}</div>
                   </div>
                 </div>
               </div>
@@ -1787,7 +1715,7 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
             {error && !loading && (
               <div className="modal-error-card">
                 <p role="alert" style={{color:"var(--error)",marginBottom:"1rem"}}>{error}</p>
-                <button type="button" className="btn-add" onClick={()=>openCard(activeCard)}>Try Again</button>
+                <button type="button" className="btn-add" onClick={()=>openCard(activeCard)}>{t("tryAgain")}</button>
               </div>
             )}
 
@@ -1796,7 +1724,7 @@ function DiscoverPage({ onSave, savedIds, onAddToPlanner, onToast }: {
                 {improving && (
                   <div className="improve-overlay">
                     <div className="loading-spinner"/>
-                    <div className="loading-label" style={{fontSize:"1rem"}}>Improving recipe…</div>
+                    <div className="loading-label" style={{fontSize:"1rem"}}>{t("improvingRecipe")}</div>
                   </div>
                 )}
                 <RecipeOutput
@@ -1826,6 +1754,7 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
   setItems: React.Dispatch<React.SetStateAction<PantryItem[]>>;
   onGenerateFromPantry: () => void;
 }) {
+  const { t, term } = useI18n();
   const [newItem, setNewItem] = useState("");
   const [editingIdx, setEditingIdx] = useState<number|null>(null);
   const [editName, setEditName] = useState("");
@@ -1833,16 +1762,16 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
   const [editStatus, setEditStatus] = useState<PantryStatus>("ok");
 
   const add = () => {
-    if (newItem.trim()) { setItems(p=>[...p,{name:newItem.trim(),qty:"1 unit",status:"ok"}]); setNewItem(""); }
+    if (newItem.trim()) { setItems(p=>[...p,{name:newItem.trim(),qty:t("oneUnit"),status:"ok"}]); setNewItem(""); }
   };
   const startEdit = (i: number) => {
-    setEditingIdx(i); setEditName(items[i].name); setEditQty(items[i].qty); setEditStatus(items[i].status);
+    setEditingIdx(i); setEditName(term(items[i].name)); setEditQty(term(items[i].qty)); setEditStatus(items[i].status);
   };
   const saveEdit = () => {
     if (editingIdx===null || !editName.trim()) return;
     setItems(p=>p.map((item,i)=>i===editingIdx?{
       name:editName.trim(),
-      qty:editQty.trim() || "1 unit",
+      qty:editQty.trim() || t("oneUnit"),
       status:editStatus
     }:item));
     setEditingIdx(null);
@@ -1853,71 +1782,71 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
       <AmbientPageBackground variant="pantry" />
       <div className="pantry-page page-content-layer">
         <div style={{marginBottom:"2rem"}}>
-          <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>Smart Pantry</div>
-          <h1 className="discover-title">Your <em style={{fontFamily:"var(--font-display),Georgia,serif",fontStyle:"italic",color:"var(--terra)"}}>pantry</em></h1>
+          <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>{t("smartPantry")}</div>
+          <PageTitle {...titleParts(t("pantryTitle"))} />
         </div>
         <form style={{display:"flex",gap:"0.5rem",marginBottom:"1.5rem"}} onSubmit={event=>{event.preventDefault();add();}}>
-          <input className="ingredient-input" aria-label="Add ingredient to pantry" placeholder="Add ingredient to pantry…" value={newItem} maxLength={80} autoComplete="off" onChange={e=>setNewItem(e.target.value)}/>
-          <button type="submit" className="btn-add">+ Add</button>
+          <input className="ingredient-input" aria-label={t("addToPantryLabel")} placeholder={t("addToPantryPlaceholder")} value={newItem} maxLength={80} autoComplete="off" onChange={e=>setNewItem(e.target.value)}/>
+          <button type="submit" className="btn-add">+ {t("add")}</button>
         </form>
         <div className="pantry-grid">
           <div className="pantry-card">
-            <h2 className="pantry-card-title">◎ Current Stock</h2>
+            <h2 className="pantry-card-title">◎ {t("currentStock")}</h2>
             {items.length===0 && (
               <p style={{fontSize:"0.85rem",color:"var(--smoke)",padding:"0.75rem 0 1rem"}}>
-                Your pantry is empty. Add an ingredient above to get started.
+                {t("pantryEmpty")}
               </p>
             )}
             {items.map((item,i)=>(
               <div key={i} className="pantry-item">
                 {editingIdx===i ? (
                   <div className="pantry-item-edit">
-                    <input className="ingredient-input" aria-label="Ingredient name" style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem"}} value={editName} maxLength={80} onChange={e=>setEditName(e.target.value)} onKeyDown={event=>{if(event.key==="Enter")saveEdit();if(event.key==="Escape")setEditingIdx(null);}}/>
+                    <input className="ingredient-input" aria-label={t("ingredientNameAria")} style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem"}} value={editName} maxLength={80} onChange={e=>setEditName(e.target.value)} onKeyDown={event=>{if(event.key==="Enter")saveEdit();if(event.key==="Escape")setEditingIdx(null);}}/>
                     <div className="pantry-item-controls">
-                      <input className="ingredient-input" aria-label="Ingredient quantity" style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem",width:"90px"}} value={editQty} maxLength={40} onChange={e=>setEditQty(e.target.value)} placeholder="qty"/>
-                      <button type="button" className={`pantry-status-toggle ${editStatus}`} aria-label={`Stock status: ${editStatus==="ok"?"in stock":"low"}. Change status.`} onClick={()=>setEditStatus(s=>s==="ok"?"low":"ok")}>
-                        {editStatus==="ok"?"In Stock":"Low"}
+                      <input className="ingredient-input" aria-label={t("ingredientQtyAria")} style={{padding:"0.35rem 0.5rem",fontSize:"0.82rem",width:"90px"}} value={editQty} maxLength={40} onChange={e=>setEditQty(e.target.value)} placeholder={t("qty")}/>
+                      <button type="button" className={`pantry-status-toggle ${editStatus}`} aria-label={t("stockStatus", { status: editStatus==="ok"?t("inStockLower"):t("lowStock") })} onClick={()=>setEditStatus(s=>s==="ok"?"low":"ok")}>
+                        {editStatus==="ok"?t("inStock"):t("low")}
                       </button>
-                      <button type="button" className="pantry-edit-save" disabled={!editName.trim()} onClick={saveEdit}>✓ Save</button>
-                      <button type="button" className="pantry-edit-cancel" onClick={()=>setEditingIdx(null)}>Cancel</button>
+                      <button type="button" className="pantry-edit-save" disabled={!editName.trim()} onClick={saveEdit}>✓ {t("save")}</button>
+                      <button type="button" className="pantry-edit-cancel" onClick={()=>setEditingIdx(null)}>{t("cancel")}</button>
                     </div>
                   </div>
                 ) : (
                   <>
                     <div className="pantry-item-name">
                       <span className={`pantry-item-dot${item.status==="low"?" low":""}`} aria-hidden="true"/>
-                      {item.name}
-                      <span className="sr-only">, {item.status==="low"?"low stock":"in stock"}</span>
+                      {term(item.name)}
+                      <span className="sr-only">, {item.status==="low"?t("lowStock"):t("inStockLower")}</span>
                     </div>
                     <div className="pantry-item-actions">
-                      <span style={{fontSize:"0.78rem",color:"var(--smoke)",fontFamily:"var(--font-mono),monospace"}}>{item.qty}</span>
-                      <button type="button" className="pantry-icon-btn edit" aria-label={`Edit ${item.name}`} onClick={()=>startEdit(i)}>✎</button>
-                      <button type="button" className="pantry-icon-btn delete" aria-label={`Remove ${item.name}`} onClick={()=>setItems(p=>p.filter((_,j)=>j!==i))}>×</button>
+                      <span style={{fontSize:"0.78rem",color:"var(--smoke)",fontFamily:"var(--font-mono),monospace"}}>{term(item.qty)}</span>
+                      <button type="button" className="pantry-icon-btn edit" aria-label={t("editNamed", { name: term(item.name) })} onClick={()=>startEdit(i)}>✎</button>
+                      <button type="button" className="pantry-icon-btn delete" aria-label={t("removeNamed", { name: term(item.name) })} onClick={()=>setItems(p=>p.filter((_,j)=>j!==i))}>×</button>
                     </div>
                   </>
                 )}
               </div>
             ))}
-            <button type="button" className="pantry-suggest-btn" disabled={items.length===0} onClick={onGenerateFromPantry}>✦ Generate Recipe from Pantry</button>
+            <button type="button" className="pantry-suggest-btn" disabled={items.length===0} onClick={onGenerateFromPantry}>✦ {t("generateFromPantry")}</button>
           </div>
           <div>
             <div className="pantry-card" style={{marginBottom:"1rem"}}>
-              <h2 className="pantry-card-title">🛒 Shopping Suggestions</h2>
+              <h2 className="pantry-card-title">🛒 {t("shoppingSuggestions")}</h2>
               {items.filter(i=>i.status==="low").length===0 ? (
-                <p style={{fontSize:"0.82rem",color:"var(--smoke)",fontStyle:"italic",padding:"0.4rem 0"}}>Nothing is running low. Your pantry is fully stocked. ✓</p>
+                <p style={{fontSize:"0.82rem",color:"var(--smoke)",fontStyle:"italic",padding:"0.4rem 0"}}>{t("nothingLow")} ✓</p>
               ) : items.filter(i=>i.status==="low").map(item=>(
                 <div key={item.name} className="pantry-item">
-                  <div className="pantry-item-name"><span className="pantry-item-dot low" aria-hidden="true"/>{item.name}</div>
-                  <span style={{fontSize:"0.75rem",color:"var(--terra)"}}>Running low ({item.qty} left)</span>
+                  <div className="pantry-item-name"><span className="pantry-item-dot low" aria-hidden="true"/>{term(item.name)}</div>
+                  <span style={{fontSize:"0.75rem",color:"var(--terra)"}}>{t("runningLow", { qty: term(item.qty) })}</span>
                 </div>
               ))}
             </div>
             <div className="pantry-card">
-              <h2 className="pantry-card-title">◈ Recipe Suggestions</h2>
+              <h2 className="pantry-card-title">◈ {t("recipeSuggestions")}</h2>
               {["Aglio e Olio","Chicken Piccata","Frittata","Lemon Pasta"].map(r=>(
                 <div key={r} style={{padding:"0.4rem 0",fontSize:"0.88rem",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span>{r}</span>
-                  <span style={{fontSize:"0.75rem",color:"var(--sage)",fontFamily:"var(--font-mono),monospace"}}>pantry-friendly</span>
+                  <span>{term(r)}</span>
+                  <span style={{fontSize:"0.75rem",color:"var(--sage)",fontFamily:"var(--font-mono),monospace"}}>{t("pantryFriendly")}</span>
                 </div>
               ))}
             </div>
@@ -1930,35 +1859,36 @@ function PantryPage({ items, setItems, onGenerateFromPantry }: {
 
 // ─── PlannerPage ──────────────────────────────────────────────────────────────
 function PlannerPage({ mealPlan, onRegenerate }: { mealPlan: MealPlan; onRegenerate: () => void }) {
+  const { t, term, lang } = useI18n();
   const days = Object.keys(mealPlan);
   return (
     <div className="page ambient-page">
       <AmbientPageBackground variant="planner" />
       <div className="planner-page page-content-layer">
         <div style={{marginBottom:"1.5rem"}}>
-          <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>AI Meal Planner</div>
-          <h1 className="discover-title">Weekly <em style={{fontFamily:"var(--font-display),Georgia,serif",fontStyle:"italic",color:"var(--terra)"}}>meal plan</em></h1>
+          <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>{t("aiMealPlanner")}</div>
+          <PageTitle {...titleParts(t("plannerTitle"))} />
         </div>
         <div style={{display:"flex",gap:"1rem",marginBottom:"1.5rem",flexWrap:"wrap",alignItems:"center"}}>
-          {[["Target","1800 kcal/day"],["Protein","120g"],["Carbs","200g"],["Fat","65g"]].map(([label,val])=>(
+          {[[t("target"),t("kcalPerDay", { n: formatNumber(lang, 1800) })],[t("protein"),"120g"],[t("carbs"),"200g"],[t("fat"),"65g"]].map(([label,val])=>(
             <div key={label} style={{background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"12px",padding:"0.75rem 1.25rem",textAlign:"center"}}>
               <div style={{fontFamily:"var(--font-mono),monospace",fontSize:"0.65rem",textTransform:"uppercase",letterSpacing:"0.1em",color:"var(--smoke)",marginBottom:"0.2rem"}}>{label}</div>
               <div style={{fontFamily:"var(--font-display),Georgia,serif",fontSize:"1.3rem",fontWeight:600,color:"var(--bark)"}}>{val}</div>
             </div>
           ))}
-          <button type="button" onClick={onRegenerate} style={{minHeight:"44px",padding:"0.75rem 1.25rem",borderRadius:"12px",background:"var(--terra)",color:"var(--on-accent)",border:"none",cursor:"pointer",fontFamily:"var(--font-body),system-ui,sans-serif",fontSize:"0.9rem",fontWeight:500,marginLeft:"auto"}}>✦ Regenerate Plan</button>
+          <button type="button" onClick={onRegenerate} style={{minHeight:"44px",padding:"0.75rem 1.25rem",borderRadius:"12px",background:"var(--terra)",color:"var(--on-accent)",border:"none",cursor:"pointer",fontFamily:"var(--font-body),system-ui,sans-serif",fontSize:"0.9rem",fontWeight:500,marginLeft:"auto"}}>✦ {t("regeneratePlan")}</button>
         </div>
         <div className="planner-grid">
           {days.map(day=>(
             <div key={day} className="planner-day">
-              <div className="planner-day-name">{day}</div>
+              <div className="planner-day-name">{weekdayLabel(lang, day)}</div>
               {(["b","l","d"] as const).map((key,i)=>(
                 <div key={key} className="planner-meal">
-                  <div className="planner-meal-type">{["Breakfast","Lunch","Dinner"][i]}</div>
-                  <div className="planner-meal-name">{mealPlan[day][key]}</div>
+                  <div className="planner-meal-type">{t((["breakfast","lunch","dinner"] as const)[i])}</div>
+                  <div className="planner-meal-name">{term(mealPlan[day][key])}</div>
                 </div>
               ))}
-              <div className="planner-cal">{mealPlan[day].cal} kcal</div>
+              <div className="planner-cal">{formatNumber(lang, mealPlan[day].cal)} {lang==="id"?"kkal":"kcal"}</div>
             </div>
           ))}
         </div>
@@ -1969,19 +1899,20 @@ function PlannerPage({ mealPlan, onRegenerate }: { mealPlan: MealPlan; onRegener
 
 // ─── SavedPage ────────────────────────────────────────────────────────────────
 function SavedPage({ saved, onRemove }: { saved:Recipe[]; onRemove:(r:Recipe)=>void }) {
+  const { t, term } = useI18n();
   return (
     <div className="page ambient-page">
       <AmbientPageBackground variant="saved" />
       <div className="saved-page page-content-layer">
         <div style={{marginBottom:"2rem"}}>
-          <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>Your Collection</div>
-          <h1 className="discover-title">Saved <em style={{fontFamily:"var(--font-display),Georgia,serif",fontStyle:"italic",color:"var(--terra)"}}>recipes</em></h1>
+          <div className="hero-eyebrow" style={{justifyContent:"flex-start",marginBottom:"0.5rem"}}>{t("yourCollection")}</div>
+          <PageTitle {...titleParts(t("savedTitle"))} />
         </div>
         {saved.length===0 ? (
           <div className="empty-state">
             <div className="empty-icon">♡</div>
-            <div className="empty-text">No saved recipes yet</div>
-            <p style={{fontSize:"0.9rem",color:"var(--smoke)",marginTop:"0.5rem"}}>Generate or discover recipes, then save your favorites here.</p>
+            <div className="empty-text">{t("noSaved")}</div>
+            <p style={{fontSize:"0.9rem",color:"var(--smoke)",marginTop:"0.5rem"}}>{t("noSavedSub")}</p>
           </div>
         ) : (
           <div className="recipe-grid">
@@ -1990,16 +1921,16 @@ function SavedPage({ saved, onRemove }: { saved:Recipe[]; onRemove:(r:Recipe)=>v
                 <div className="recipe-card-img">
                   <span style={{position:"relative",zIndex:1,fontSize:"3rem"}}>{r.emoji||"🍽️"}</span>
                   <div className="recipe-card-img-overlay"/>
-                  <span className="recipe-card-tag">{r.cuisine||"Custom"}</span>
+                  <span className="recipe-card-tag">{r.cuisine ? term(r.cuisine) : t("custom")}</span>
                 </div>
                 <div className="recipe-card-body">
                   <div className="recipe-card-name">{r.name}</div>
                   <div className="recipe-card-meta">
-                    <span>⏱ {r.time||"Not set"}</span>
-                    <span>🔥 {r.nutrition?.calories||r.calories||"Not set"} cal</span>
+                    <span>⏱ {r.time||t("notSet")}</span>
+                    <span>🔥 {r.nutrition?.calories||r.calories||t("notSet")} {t("calUnit")}</span>
                   </div>
                   <button type="button" className="btn-action" style={{marginTop:"0.75rem",width:"100%",justifyContent:"center",background:"var(--warm-white)"}} onClick={()=>onRemove(r)}>
-                    Remove
+                    {t("remove")}
                   </button>
                 </div>
               </article>
@@ -2011,8 +1942,126 @@ function SavedPage({ saved, onRemove }: { saved:Recipe[]; onRemove:(r:Recipe)=>v
   );
 }
 
+// ─── Language switcher ────────────────────────────────────────────────────────
+function LanguageSwitcher() {
+  const { lang, language, setLang, t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const menuId = useId();
+
+  const focusItem = (index: number) => {
+    const count = LANGUAGES.length;
+    itemRefs.current[(index + count) % count]?.focus();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const activeIndex = Math.max(0, LANGUAGES.findIndex(option => option.code === lang));
+    const frame = window.requestAnimationFrame(() => itemRefs.current[activeIndex]?.focus());
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, lang]);
+
+  const choose = (code: LanguageCode) => {
+    setLang(code);
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const current = itemRefs.current.findIndex(item => item === document.activeElement);
+    if (event.key === "ArrowDown") { event.preventDefault(); focusItem(current + 1); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); focusItem(current - 1); }
+    else if (event.key === "Home") { event.preventDefault(); focusItem(0); }
+    else if (event.key === "End") { event.preventDefault(); focusItem(LANGUAGES.length - 1); }
+    else if (event.key === "Tab") setOpen(false);
+  };
+
+  return (
+    <div className="lang-switcher" ref={rootRef}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="lang-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        aria-label={t("currentLanguage", { name: language.native })}
+        title={t("chooseLanguage")}
+        onClick={() => setOpen(current => !current)}
+        onKeyDown={event => {
+          if (event.key === "ArrowDown" && !open) { event.preventDefault(); setOpen(true); }
+        }}
+      >
+        <Globe size={18} weight="duotone" aria-hidden="true" />
+        <span className="lang-trigger-code" aria-hidden="true">{lang.toUpperCase()}</span>
+        <CaretDown className="lang-trigger-caret" size={12} weight="bold" aria-hidden="true" />
+      </button>
+      {open && (
+        <div id={menuId} className="lang-menu" role="menu" aria-label={t("chooseLanguage")} onKeyDown={handleMenuKeyDown}>
+          <p className="lang-menu-title" aria-hidden="true">{t("language")}</p>
+          {LANGUAGES.map((option, index) => (
+            <button
+              key={option.code}
+              ref={element => { itemRefs.current[index] = element; }}
+              type="button"
+              role="menuitemradio"
+              aria-checked={option.code === lang}
+              tabIndex={option.code === lang ? 0 : -1}
+              className={`lang-option${option.code === lang ? " active" : ""}`}
+              onClick={() => choose(option.code)}
+            >
+              <span className="lang-option-code" aria-hidden="true">{option.code.toUpperCase()}</span>
+              <span className="lang-option-names">
+                <span className="lang-option-native" lang={option.code}>{option.native}</span>
+                {option.code !== "en" && <span className="lang-option-english" lang="en">{option.name}</span>}
+              </span>
+              {option.code === lang && <Check className="lang-option-check" size={16} weight="bold" aria-hidden="true" />}
+            </button>
+          ))}
+          <p className="lang-menu-note">{t("langMenuNote")}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function RecipePlatform() {
+  return (
+    <LanguageProvider>
+      <CulinariaApp />
+    </LanguageProvider>
+  );
+}
+
+const NAV_TABS: Array<{ id: string; label: UIKey }> = [
+  { id: "generate", label: "navGenerate" },
+  { id: "discover", label: "navDiscover" },
+  { id: "pantry", label: "navPantry" },
+  { id: "planner", label: "navPlanner" },
+  { id: "saved", label: "navSaved" },
+];
+
+function CulinariaApp() {
+  const { t, lang } = useI18n();
   const [tab, setTab] = useState("generate");
   const [storedTheme, setTheme] = usePersistentState<ThemeMode>(STORAGE_KEYS.theme, "light");
   const [saved, setSaved] = usePersistentState<Recipe[]>(STORAGE_KEYS.saved, EMPTY_RECIPES);
@@ -2037,22 +2086,22 @@ export default function RecipePlatform() {
   const handleSave = (recipe: Recipe) => {
     if (saved.find(r=>r.name===recipe.name)) {
       setSaved(p=>p.filter(r=>r.name!==recipe.name));
-      addToast("Recipe removed","✕");
+      addToast(t("recipeRemoved"),"✕");
     } else {
       setSaved(p=>[...p,recipe]);
-      addToast("Recipe saved!","♡");
+      addToast(t("recipeSaved"),"♡");
     }
   };
 
   const handleAddToPlanner = (recipe: Recipe, day: string, meal: MealKey) => {
     setMealPlan(p=>({...p, [day]:{...p[day],[meal]:recipe.name}}));
-    const label = meal==="b"?"Breakfast":meal==="l"?"Lunch":"Dinner";
-    addToast(`Added to ${day} ${label}`, "📅");
+    const label = meal==="b"?t("breakfast"):meal==="l"?t("lunch"):t("dinner");
+    addToast(t("addedToPlan", { day: weekdayLabel(lang, day), meal: label }), "📅");
   };
 
   const handleRegeneratePlan = () => {
     setMealPlan(buildMealPlan(saved));
-    addToast("Meal plan regenerated", "✦");
+    addToast(t("planRegenerated"), "✦");
   };
 
   const savedIds = new Set(saved.map(r=>r.name));
@@ -2060,26 +2109,32 @@ export default function RecipePlatform() {
   return (
     <>
 <div className="app">
-        <a className="skip-link" href="#main-content">Skip to main content</a>
-        <nav className="nav" aria-label="Primary">
-          <div className="nav-logo">
-            <Diamond className="nav-logo-mark" size={19} weight="duotone" aria-hidden="true" />
-            <span>Culinaria</span>
+        <a className="skip-link" href="#main-content">{t("skipToContent")}</a>
+        <nav className="nav" aria-label={t("primaryNav")}>
+          <div className="nav-brand">
+            <LanguageSwitcher />
+            <div className="nav-logo">
+              <Diamond className="nav-logo-mark" size={19} weight="duotone" aria-hidden="true" />
+              <span>Culinaria</span>
+            </div>
           </div>
           <div className="nav-actions">
             <div className="nav-tabs">
-              {[{id:"generate",label:"Generate"},{id:"discover",label:"Discover"},{id:"pantry",label:"Pantry"},{id:"planner",label:"Planner"},{id:"saved",label:"Saved",badge:saved.length||null}].map(t=>(
-                <button type="button" key={t.id} aria-current={tab===t.id?"page":undefined} className={`nav-tab${tab===t.id?" active":""}`} onClick={()=>setTab(t.id)}>
-                  {t.label}{t.badge?<span className="nav-badge">{t.badge}</span>:null}
-                </button>
-              ))}
+              {NAV_TABS.map(item=>{
+                const badge = item.id === "saved" ? saved.length || null : null;
+                return (
+                  <button type="button" key={item.id} aria-current={tab===item.id?"page":undefined} className={`nav-tab${tab===item.id?" active":""}`} onClick={()=>setTab(item.id)}>
+                    {t(item.label)}{badge?<span className="nav-badge">{badge}</span>:null}
+                  </button>
+                );
+              })}
             </div>
             <button
               type="button"
               className="theme-toggle"
-              aria-label="Night mode"
+              aria-label={t("nightMode")}
               aria-pressed={theme === "dark"}
-              title={theme === "dark" ? "Switch to day mode" : "Switch to night mode"}
+              title={theme === "dark" ? t("switchToDay") : t("switchToNight")}
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             >
               {theme === "dark"
