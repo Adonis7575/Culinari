@@ -38,25 +38,61 @@ const TEXT_REPLACEMENTS: Record<string, string> = {
   "’": "'",
   "…": "...",
   "×": "x",
-  "°": " degrees ",
+  "„": "\"",
+  "‚": "'",
+  "œ": "oe",
+  "Œ": "OE",
+  "ı": "i",
 };
 
+export interface RecipePdfLabels {
+  time: string;
+  difficulty: string;
+  servings: string;
+  calories: string;
+  perServing: string;
+  ingredients: string;
+  directions: string;
+  nutritionPerServing: string;
+  protein: string;
+  carbs: string;
+  fat: string;
+  cooksNote: string;
+  footer: string;
+  cuisine?: string;
+  difficultyValue?: string;
+  locale?: string;
+}
+
+function isPdfSafe(character: string) {
+  const code = character.codePointAt(0) ?? 0;
+  // The built-in PDF fonts cover printable ASCII plus Latin-1 (accented letters such as é, ñ, ü, ß).
+  return (code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xff);
+}
+
 function safeText(value: unknown): string {
-  const input = String(value ?? "");
+  const input = String(value ?? "").normalize("NFC");
   const replaced = Array.from(input)
     .map(character => TEXT_REPLACEMENTS[character] ?? character)
     .join("");
 
-  return replaced
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\x20-\x7E]/g, "")
+  return Array.from(replaced)
+    .map(character => {
+      if (isPdfSafe(character)) return character;
+      if (/\s/.test(character)) return " ";
+      // Fall back to the unaccented letter for characters outside Latin-1 (e.g. ş → s).
+      const base = character.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+      return Array.from(base).every(isPdfSafe) ? base : "";
+    })
+    .join("")
     .replace(/\s+/g, " ")
     .trim();
 }
 
 function fileNameFor(recipe: Recipe) {
   const slug = safeText(recipe.name)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
@@ -77,7 +113,25 @@ function setDrawColor(doc: JsPDF, color: readonly [number, number, number]) {
   doc.setDrawColor(color[0], color[1], color[2]);
 }
 
-export async function downloadRecipePdf(recipe: Recipe): Promise<string> {
+const ENGLISH_LABELS: RecipePdfLabels = {
+  time: "Time",
+  difficulty: "Difficulty",
+  servings: "Servings",
+  calories: "Calories",
+  perServing: "",
+  ingredients: "Ingredients",
+  directions: "Directions",
+  nutritionPerServing: "Nutrition per serving",
+  protein: "Protein",
+  carbs: "Carbs",
+  fat: "Fat",
+  cooksNote: "Cook's note",
+  footer: "MADE FOR YOUR TABLE",
+};
+
+export async function downloadRecipePdf(recipe: Recipe, labelOverrides?: RecipePdfLabels): Promise<string> {
+  const labels = labelOverrides ?? ENGLISH_LABELS;
+  const upper = (text: string) => safeText(text.toLocaleUpperCase(labels.locale || "en"));
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({
     unit: "pt",
@@ -144,7 +198,7 @@ export async function downloadRecipePdf(recipe: Recipe): Promise<string> {
   doc.setFont("courier", "bold");
   doc.setFontSize(9);
   setTextColor(doc, COLORS.gold);
-  doc.text(safeText(recipe.cuisine || "Custom").toUpperCase(), PAGE.margin, 42);
+  doc.text(upper(labels.cuisine || recipe.cuisine || "Custom"), PAGE.margin, 42);
 
   doc.setFont("times", "normal");
   doc.setFontSize(27);
@@ -160,10 +214,10 @@ export async function downloadRecipePdf(recipe: Recipe): Promise<string> {
   y = headerHeight + 28;
 
   const metadata = [
-    ["TIME", recipe.time],
-    ["DIFFICULTY", recipe.difficulty],
-    ["SERVINGS", String(recipe.servings)],
-    ["CALORIES", `${recipe.nutrition?.calories ?? 0} / serving`],
+    [upper(labels.time), recipe.time],
+    [upper(labels.difficulty), labels.difficultyValue || recipe.difficulty],
+    [upper(labels.servings), String(recipe.servings)],
+    [upper(labels.calories), labels.perServing || `${recipe.nutrition?.calories ?? 0} / serving`],
   ];
   const metaWidth = contentWidth / metadata.length;
   const metaHeight = 54;
@@ -187,7 +241,7 @@ export async function downloadRecipePdf(recipe: Recipe): Promise<string> {
   });
   y += metaHeight;
 
-  sectionHeading("Ingredients");
+  sectionHeading(labels.ingredients);
   const amountWidth = 132;
   const nameX = PAGE.margin + amountWidth;
   const nameWidth = contentWidth - amountWidth;
@@ -218,7 +272,7 @@ export async function downloadRecipePdf(recipe: Recipe): Promise<string> {
   });
 
   y += 16;
-  sectionHeading("Directions");
+  sectionHeading(labels.directions);
 
   recipe.steps.forEach((step, index) => {
     const textX = PAGE.margin + 40;
@@ -261,12 +315,12 @@ export async function downloadRecipePdf(recipe: Recipe): Promise<string> {
   if (recipe.nutrition) {
     ensureSpace(104);
     y += 8;
-    sectionHeading("Nutrition per serving");
+    sectionHeading(labels.nutritionPerServing);
     const nutrition = [
-      ["Calories", `${recipe.nutrition.calories} kcal`],
-      ["Protein", `${recipe.nutrition.protein} g`],
-      ["Carbs", `${recipe.nutrition.carbs} g`],
-      ["Fat", `${recipe.nutrition.fat} g`],
+      [labels.calories, `${recipe.nutrition.calories} kcal`],
+      [labels.protein, `${recipe.nutrition.protein} g`],
+      [labels.carbs, `${recipe.nutrition.carbs} g`],
+      [labels.fat, `${recipe.nutrition.fat} g`],
     ];
     const cellWidth = contentWidth / nutrition.length;
     setFillColor(doc, COLORS.soft);
@@ -281,14 +335,14 @@ export async function downloadRecipePdf(recipe: Recipe): Promise<string> {
       doc.setFont("courier", "normal");
       doc.setFontSize(7);
       setTextColor(doc, COLORS.smoke);
-      doc.text(label.toUpperCase(), x, y + 28, { align: "center" });
+      doc.text(upper(label), x, y + 28, { align: "center" });
     });
     y += 68;
   }
 
   if (recipe.tips) {
     y += 10;
-    sectionHeading("Cook's note");
+    sectionHeading(labels.cooksNote);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.5);
     const tipLines = doc.splitTextToSize(safeText(recipe.tips), contentWidth - 28) as string[];
@@ -319,7 +373,7 @@ export async function downloadRecipePdf(recipe: Recipe): Promise<string> {
     doc.setFont("courier", "normal");
     doc.setFontSize(7.5);
     setTextColor(doc, COLORS.smoke);
-    doc.text("CULINARIA  |  MADE FOR YOUR TABLE", PAGE.margin, PAGE.footerY);
+    doc.text(`CULINARIA  |  ${upper(labels.footer)}`, PAGE.margin, PAGE.footerY);
     doc.text(`${pageNumber} / ${pageCount}`, PAGE.width - PAGE.margin, PAGE.footerY, { align: "right" });
   }
 
